@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>Mini Takip - Ayarlar</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="titlebar">
+      <span id="app-title">Ayarlar</span>
+      <div id="titlebar-actions">
+        <button id="btn-close-settings" title="Kapat">&times;</button>
+      </div>
+    </div>
+
+    <div id="settings-body">
+      <div class="settings-section">
+        <h3>Genel</h3>
+        <div class="settings-row">
+          <label for="input-refresh">Yenileme araligi (saniye)</label>
+          <input id="input-refresh" type="number" min="15" step="5" />
+        </div>
+        <div class="settings-row">
+          <label for="input-startup">Windows ile baslat</label>
+          <input id="input-startup" type="checkbox" />
+        </div>
+        <div class="settings-row">
+          <label for="input-magnet">Miknatis (pencere yapistirma)</label>
+          <input id="input-magnet" type="checkbox" />
+        </div>
+        <div class="settings-row">
+          <label for="input-hotkey">Genel kisayol (Ctrl+Shift+M ile goster/gizle)</label>
+          <input id="input-hotkey" type="checkbox" />
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Gorunum</h3>
+        <div class="view-mode-options" id="view-mode-options">
+          <label>
+            <input type="radio" name="viewMode" value="list" />
+            <span>Liste</span>
+          </label>
+          <label>
+            <input type="radio" name="viewMode" value="compact" />
+            <span>Kompakt</span>
+          </label>
+          <label>
+            <input type="radio" name="viewMode" value="grid" />
+            <span>Izgara</span>
+          </label>
+        </div>
+        <div class="view-mode-options" id="theme-mode-options">
+          <label>
+            <input type="radio" name="themeMode" value="dark" />
+            <span>Koyu</span>
+          </label>
+          <label>
+            <input type="radio" name="themeMode" value="light" />
+            <span>Acik</span>
+          </label>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>Guncelleme</h3>
+        <div class="settings-row">
+          <label>Surum</label>
+          <span id="app-version">-</span>
+        </div>
+        <p id="update-status-text" class="settings-hint">-</p>
+        <button id="btn-check-update" class="save-detail">Guncellemeleri kontrol et</button>
+        <button id="btn-install-update" class="save-detail hidden">Yeniden baslat ve guncelle</button>
+      </div>
+
+      <div class="settings-section">
+        <h3>Izleme Listesi</h3>
+        <p class="settings-hint">Her ogenin yaninda "Detay" ile portfoy (adet/maliyet) ve fiyat alarmi ayarlayabilirsiniz.</p>
+        <div id="watchlist-manage"></div>
+      </div>
+    </div>
+
+    <script src="settings.js"></script>
+  </body>
+</html>

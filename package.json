@@ -1,0 +1,50 @@
+{
+  "name": "mini-takip",
+  "productName": "Mini Takip",
+  "version": "0.1.0",
+  "description": "Doviz, altin, ABD borsasi ve kripto para takip masaustu widget'i",
+  "main": "dist/main/main.js",
+  "private": true,
+  "scripts": {
+    "build": "node build.js",
+    "start": "npm run build && electron .",
+    "dev": "node build.js --watch",
+    "pack": "npm run build && electron-builder --win",
+    "release": "npm run build && electron-builder --win --publish always"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  },
+  "build": {
+    "appId": "com.mustafacelik.minitakip",
+    "productName": "Mini Takip",
+    "files": [
+      "dist/**",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "mrcelix",
+      "repo": "piyasamatik"
+    }
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "esbuild@0.24.2": true
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

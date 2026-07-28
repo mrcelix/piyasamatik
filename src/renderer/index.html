@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>Mini Takip</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div id="titlebar">
+      <span id="app-title">Mini Takip</span>
+      <div id="titlebar-actions">
+        <button id="btn-add" title="Ogeekle">+</button>
+        <button id="btn-convert" title="Kur cevirici">&#8644;</button>
+        <button id="btn-news" title="Piyasa haberleri"></button>
+        <button id="btn-refresh" title="Yenile">&#8635;</button>
+        <button id="btn-magnet" title="Miknatis"></button>
+        <button id="btn-settings" title="Ayarlar">&#9881;</button>
+        <button id="btn-minimize" title="Kucult">&#8211;</button>
+        <button id="btn-hide" title="Gizle">&times;</button>
+      </div>
+    </div>
+
+    <div id="category-tabs"></div>
+
+    <div id="list"></div>
+
+    <div id="add-panel" class="hidden">
+      <div id="add-panel-header">
+        <input id="search-input" type="text" placeholder="Sembol veya isim ara: USD, AAPL, bitcoin, gram altin..." autocomplete="off" />
+        <button id="btn-close-add">&times;</button>
+      </div>
+      <div id="search-results"></div>
+    </div>
+
+    <div id="convert-panel" class="hidden">
+      <div id="add-panel-header">
+        <span class="panel-title">Kur Cevirici</span>
+        <button id="btn-close-convert">&times;</button>
+      </div>
+      <div id="convert-body">
+        <div class="convert-row">
+          <input id="convert-amount" type="number" value="1" min="0" step="any" />
+          <select id="convert-from"></select>
+        </div>
+        <div class="convert-arrow">&#8595;</div>
+        <div class="convert-row">
+          <div id="convert-result">--</div>
+          <select id="convert-to"></select>
+        </div>
+      </div>
+    </div>
+
+    <div id="news-panel" class="hidden">
+      <div id="add-panel-header">
+        <span class="panel-title">Piyasa Haberleri</span>
+        <button id="btn-refresh-news" title="Yenile">&#8635;</button>
+        <button id="btn-close-news">&times;</button>
+      </div>
+      <div id="news-list"></div>
+    </div>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>
