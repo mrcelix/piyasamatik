@@ -3,11 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
-    <title>Mini Takip</title>
+    <title>Piyasamatik</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div id="mini-titlebar">
+      <span id="mini-icon" class="mini-icon"></span>
       <span id="mini-label">...</span>
       <div id="mini-titlebar-actions">
         <button id="btn-mini-chart" title="Gecmis grafik"></button>
@@ -15,7 +16,10 @@
       </div>
     </div>
     <div id="mini-body">
-      <div id="mini-price">--</div>
+      <div id="mini-price-line">
+        <span id="mini-dir-arrow" class="dir-arrow"></span>
+        <div id="mini-price">--</div>
+      </div>
       <div id="mini-change" class="change-flat"></div>
     </div>
 

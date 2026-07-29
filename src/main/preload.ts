@@ -3,6 +3,7 @@ import type { WatchlistItem, Quote, SearchResult, HistoryPoint } from './provide
 import type { Settings, UpdateStatus } from './store';
 import type { ConvertCode } from './providers/truncgil';
 import type { ChartRange, NewsItem } from './providers';
+import type { AuthUser } from './auth';
 
 const api = {
   getWatchlist: (): Promise<WatchlistItem[]> => ipcRenderer.invoke('watchlist:get'),
@@ -34,11 +35,19 @@ const api = {
   onUpdateStatus: (cb: (status: UpdateStatus) => void) => {
     ipcRenderer.on('update-status', (_e, status) => cb(status));
   },
-  openSettings: (): void => void ipcRenderer.invoke('window:open-settings'),
+  openSettings: (focusItemId?: string): void => void ipcRenderer.invoke('window:open-settings', focusItemId),
+  onFocusItem: (cb: (id: string) => void) => {
+    ipcRenderer.on('focus-item', (_e, id) => cb(id));
+  },
   hideWindow: (): void => void ipcRenderer.invoke('window:hide'),
   minimizeWindow: (): void => void ipcRenderer.invoke('window:minimize'),
   quit: (): void => void ipcRenderer.invoke('window:quit'),
   closeSelf: (): void => void ipcRenderer.invoke('window:close-self'),
+  showContextMenu: (): void => void ipcRenderer.invoke('window:context-menu'),
+  requestAutofit: (width: number, height: number): void => void ipcRenderer.invoke('window:request-autofit', width, height),
+  onMenuAction: (cb: (action: string) => void) => {
+    ipcRenderer.on('menu-action', (_e, action) => cb(action));
+  },
   onQuotesUpdated: (cb: (quotes: Record<string, Quote>) => void) => {
     ipcRenderer.on('quotes-updated', (_e, quotes) => cb(quotes));
   },
@@ -54,6 +63,14 @@ const api = {
   onDetachedChanged: (cb: (ids: string[]) => void) => {
     ipcRenderer.on('detached-changed', (_e, ids) => cb(ids));
   },
+  getAuthUser: (): Promise<AuthUser | null> => ipcRenderer.invoke('auth:get-user'),
+  signInWithGoogle: (): Promise<{ user?: AuthUser; error?: string }> => ipcRenderer.invoke('auth:sign-in-google'),
+  signOut: (): Promise<void> => ipcRenderer.invoke('auth:sign-out'),
+  onAuthChanged: (cb: (user: AuthUser | null) => void) => {
+    ipcRenderer.on('auth-changed', (_e, user) => cb(user));
+  },
+  submitFeedback: (message: string, email?: string): Promise<{ error?: string }> =>
+    ipcRenderer.invoke('feedback:submit', message, email),
 };
 
 export type MiniTakipApi = typeof api;

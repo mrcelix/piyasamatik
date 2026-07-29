@@ -1,0 +1,42 @@
+<!doctype html>
+<html>
+<head>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: transparent;
+  }
+  body {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  /* vmin-based so the design is identical regardless of the actual captured
+     pixel size, as long as the window is square (enforced by generate-icons.js). */
+  .icon-box {
+    width: 86vmin;
+    height: 86vmin;
+    border-radius: 19vmin;
+    background: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+  }
+  .dollar {
+    font-family: Arial, sans-serif;
+    font-weight: 900;
+    font-size: 49vmin;
+    line-height: 1;
+    color: #4a7dff;
+  }
+</style>
+</head>
+<body>
+  <div class="icon-box"><span class="dollar">$</span></div>
+</body>
+</html>

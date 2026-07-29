@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
-    <title>Mini Takip - Ayarlar</title>
+    <title>Piyasamatik - Ayarlar</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -14,70 +14,187 @@
       </div>
     </div>
 
-    <div id="settings-body">
-      <div class="settings-section">
-        <h3>Genel</h3>
-        <div class="settings-row">
-          <label for="input-refresh">Yenileme araligi (saniye)</label>
-          <input id="input-refresh" type="number" min="15" step="5" />
-        </div>
-        <div class="settings-row">
-          <label for="input-startup">Windows ile baslat</label>
-          <input id="input-startup" type="checkbox" />
-        </div>
-        <div class="settings-row">
-          <label for="input-magnet">Miknatis (pencere yapistirma)</label>
-          <input id="input-magnet" type="checkbox" />
-        </div>
-        <div class="settings-row">
-          <label for="input-hotkey">Genel kisayol (Ctrl+Shift+M ile goster/gizle)</label>
-          <input id="input-hotkey" type="checkbox" />
-        </div>
-      </div>
+    <div id="settings-layout">
+      <nav id="settings-nav">
+        <button class="nav-item active" data-section="general">Genel</button>
+        <button class="nav-item" data-section="windows">Pencereler</button>
+        <button class="nav-item" data-section="appearance">Gorunum</button>
+        <button class="nav-item" data-section="update">Guncelleme</button>
+        <button class="nav-item" data-section="account">Hesap</button>
+        <button class="nav-item" data-section="watchlist">Izleme Listesi</button>
+        <button class="nav-item" data-section="alarm">Alarm</button>
+        <button class="nav-item" data-section="feedback">Geri Bildirim</button>
+      </nav>
 
-      <div class="settings-section">
-        <h3>Gorunum</h3>
-        <div class="view-mode-options" id="view-mode-options">
-          <label>
-            <input type="radio" name="viewMode" value="list" />
-            <span>Liste</span>
-          </label>
-          <label>
-            <input type="radio" name="viewMode" value="compact" />
-            <span>Kompakt</span>
-          </label>
-          <label>
-            <input type="radio" name="viewMode" value="grid" />
-            <span>Izgara</span>
-          </label>
-        </div>
-        <div class="view-mode-options" id="theme-mode-options">
-          <label>
-            <input type="radio" name="themeMode" value="dark" />
-            <span>Koyu</span>
-          </label>
-          <label>
-            <input type="radio" name="themeMode" value="light" />
-            <span>Acik</span>
-          </label>
-        </div>
-      </div>
+      <div id="settings-content">
+        <section id="section-general" class="settings-panel active">
+          <h3>Genel</h3>
+          <div class="settings-row">
+            <label for="input-refresh">Yenileme araligi (saniye)</label>
+            <input id="input-refresh" type="number" min="5" step="5" />
+          </div>
+          <p class="settings-hint">* En az 5 saniye olabilir. Varsayilan: 30 saniye.</p>
+          <div class="settings-row">
+            <label for="input-startup">Windows ile baslat</label>
+            <input id="input-startup" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-tray">Sistem tepsisinde simge goster</label>
+            <input id="input-tray" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-hotkey">Genel kisayol (Ctrl+Shift+M ile goster/gizle)</label>
+            <input id="input-hotkey" type="checkbox" />
+          </div>
+        </section>
 
-      <div class="settings-section">
-        <h3>Guncelleme</h3>
-        <div class="settings-row">
-          <label>Surum</label>
-          <span id="app-version">-</span>
-        </div>
-        <p id="update-status-text" class="settings-hint">-</p>
-        <button id="btn-check-update" class="save-detail">Guncellemeleri kontrol et</button>
-        <button id="btn-install-update" class="save-detail hidden">Yeniden baslat ve guncelle</button>
-      </div>
+        <section id="section-windows" class="settings-panel">
+          <h3>Pencereler</h3>
+          <div class="settings-row">
+            <label for="input-alwaysontop-main">Ana pencereyi her zaman en ustte tut</label>
+            <input id="input-alwaysontop-main" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-alwaysontop-mini">Mini pencereleri her zaman en ustte tut</label>
+            <input id="input-alwaysontop-mini" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-magnet">Miknatis (pencere yapistirma)</label>
+            <input id="input-magnet" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-autofit">Otomatik sigdir (pencereleri icerige gore boyutlandir)</label>
+            <input id="input-autofit" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-transparent">Saydam pencereler</label>
+            <input id="input-transparent" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-opacity">Saydamlik orani</label>
+            <span class="opacity-control">
+              <input id="input-opacity" type="range" min="40" max="100" step="5" />
+              <span id="opacity-value">88%</span>
+            </span>
+          </div>
+          <p class="settings-hint">Herhangi bir pencerede sag tik ile hizli islem menusune ulasabilirsiniz.</p>
+        </section>
 
-      <div class="settings-section">
-        <h3>Izleme Listesi</h3>
-        <p class="settings-hint">Her ogenin yaninda "Detay" ile portfoy (adet/maliyet) ve fiyat alarmi ayarlayabilirsiniz.</p>
-        <div id="watchlist-manage"></div>
+        <section id="section-appearance" class="settings-panel">
+          <h3>Gorunum</h3>
+          <div class="view-mode-options" id="view-mode-options">
+            <label>
+              <input type="radio" name="viewMode" value="list" />
+              <span>Liste</span>
+            </label>
+            <label>
+              <input type="radio" name="viewMode" value="compact" />
+              <span>Kompakt</span>
+            </label>
+            <label>
+              <input type="radio" name="viewMode" value="grid" />
+              <span>Izgara</span>
+            </label>
+            <label>
+              <input type="radio" name="viewMode" value="table" />
+              <span>Tablo</span>
+            </label>
+            <label>
+              <input type="radio" name="viewMode" value="ticker" />
+              <span>Kayan Serit</span>
+            </label>
+            <label>
+              <input type="radio" name="viewMode" value="heatmap" />
+              <span>Isi Haritasi</span>
+            </label>
+          </div>
+          <div class="view-mode-options" id="theme-mode-options">
+            <label>
+              <input type="radio" name="themeMode" value="dark" />
+              <span>Koyu</span>
+            </label>
+            <label>
+              <input type="radio" name="themeMode" value="light" />
+              <span>Acik</span>
+            </label>
+          </div>
+          <div class="settings-row">
+            <label for="input-grid-category">Izgara gorunumunde kategori etiketini goster (DOVIZ, HISSE, ...)</label>
+            <input id="input-grid-category" type="checkbox" />
+          </div>
+          <h3 class="sub-heading">Renk Sablonu</h3>
+          <div class="accent-options" id="accent-options">
+            <label class="accent-swatch" data-accent="blue" title="Mavi"><span></span></label>
+            <label class="accent-swatch" data-accent="gold" title="Altin"><span></span></label>
+            <label class="accent-swatch" data-accent="green" title="Yesil"><span></span></label>
+            <label class="accent-swatch" data-accent="red" title="Kirmizi"><span></span></label>
+            <label class="accent-swatch" data-accent="purple" title="Mor"><span></span></label>
+          </div>
+        </section>
+
+        <section id="section-update" class="settings-panel">
+          <h3>Guncelleme</h3>
+          <div class="settings-row">
+            <label>Surum</label>
+            <span id="app-version">-</span>
+          </div>
+          <p id="update-status-text" class="settings-hint">-</p>
+          <button id="btn-check-update" class="save-detail">Guncellemeleri kontrol et</button>
+          <button id="btn-install-update" class="save-detail hidden">Yeniden baslat ve guncelle</button>
+        </section>
+
+        <section id="section-account" class="settings-panel">
+          <h3>Hesap</h3>
+          <div id="account-logged-out">
+            <p class="settings-hint">Ayarlarinizi ve izleme listenizi baska bir cihazla senkronize etmek icin Google hesabinizla giris yapin.</p>
+            <button id="btn-google-signin" class="save-detail">Google ile Giris Yap</button>
+          </div>
+          <div id="account-logged-in" class="hidden">
+            <div class="settings-row">
+              <label>Hesap</label>
+              <span id="account-email">-</span>
+            </div>
+            <p class="settings-hint">Ayarlariniz ve izleme listeniz otomatik olarak buluta kaydediliyor.</p>
+            <button id="btn-google-signout" class="save-detail danger-action">Cikis Yap</button>
+          </div>
+          <p id="account-status-text" class="settings-hint"></p>
+        </section>
+
+        <section id="section-watchlist" class="settings-panel">
+          <h3>Izleme Listesi</h3>
+          <p class="settings-hint">Her ogenin yaninda "Detay" ile portfoy (adet/maliyet), fiyat alarmi (ustu/alti) ve yuzde alarmi (gunluk % artis/azalis) ayarlayabilirsiniz. Tum ogeler icin ortak bir alarm kurmak isterseniz Alarm bolumune bakin.</p>
+          <div id="watchlist-manage"></div>
+        </section>
+
+        <section id="section-alarm" class="settings-panel">
+          <h3>Alarm</h3>
+          <p class="settings-hint">Belirli bir oge icin fiyat/yuzde alarmi kurmak isterseniz Izleme Listesi > Detay'i kullanin. Buradaki genel alarm ise izlenen TUM ogelere aym anda uygulanir.</p>
+          <div class="settings-row">
+            <label for="input-global-alert-enabled">Tum ogeler icin genel alarm</label>
+            <input id="input-global-alert-enabled" type="checkbox" />
+          </div>
+          <div class="settings-row">
+            <label for="input-global-alert-up">Gunluk % artis esigi</label>
+            <input id="input-global-alert-up" type="number" min="0" step="any" placeholder="orn. 5" />
+          </div>
+          <div class="settings-row">
+            <label for="input-global-alert-down">Gunluk % azalis esigi</label>
+            <input id="input-global-alert-down" type="number" min="0" step="any" placeholder="orn. 5" />
+          </div>
+          <p class="settings-hint">Orn: her ikisine de 5 yazarsaniz, herhangi bir oge gun icinde %5 veya daha fazla artar ya da azalirsa bildirim alirsiniz.</p>
+        </section>
+
+        <section id="section-feedback" class="settings-panel">
+          <h3>Geri Bildirim</h3>
+          <p class="settings-hint">Oneri, hata bildirimi veya istekleriniz icin asagiya yazabilirsiniz.</p>
+          <textarea id="feedback-message" placeholder="Geri bildiriminizi buraya yazin..." rows="6"></textarea>
+          <div class="settings-row">
+            <label for="feedback-email">E-posta (istege bagli)</label>
+            <input id="feedback-email" type="email" placeholder="ornek@eposta.com" />
+          </div>
+          <button id="btn-feedback-send" class="save-detail">Gonder</button>
+          <p id="feedback-status" class="settings-hint"></p>
+        </section>
       </div>
     </div>
 

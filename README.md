@@ -1,4 +1,4 @@
-# Mini Takip
+# Piyasamatik
 
 Doviz, altin, ABD borsasi (hisse/endeks) ve kripto para takibi icin Electron tabanli, sistem tepsisinde yasayan bir masaustu widget'i.
 
@@ -9,7 +9,11 @@ npm install
 npm start
 ```
 
-`npm start` once TypeScript kaynaklarini `dist/` altina derler, sonra Electron'u baslatir. Pencere ekranin sag ust kosesinde, her zaman ustte, cerceve olmadan acilir. Sistem tepsisinde bir simge belirir; sag tik menusunden goster/gizle, simdi yenile, Windows ile baslat ve cikis secenekleri bulunur.
+`npm start` once TypeScript kaynaklarini `dist/` altina derler, sonra Electron'u baslatir. Pencere ekranin sag ust kosesinde, her zaman ustte, cerceve olmadan acilir. Sistem tepsisinde bir simge belirir; sag tik menusunden goster/gizle, simdi yenile, Windows ile baslat ve cikis secenekleri bulunur. Ana pencere ayni zamanda gorev cubugunda da her zaman gorunur (tepsi simgesinden bagimsiz olarak).
+
+## Durum cubugu
+
+Ana pencerenin en altinda ince bir durum cubugu bulunur: izlenen oge sayisi, verilerin en son ne zaman guncellendigi (saat + "X sn/dk once" seklinde canli sayac) ve uygulamanin surum numarasi. Bu cubuk otomatik sigdir hesabina dahildir.
 
 Gelistirme sirasinda otomatik yeniden derleme icin:
 
@@ -29,14 +33,72 @@ npm run pack
 
 ## Otomatik guncelleme (GitHub Releases)
 
-Uygulama acilista ve Ayarlar > Guncelleme bolumunden manuel olarak GitHub Releases uzerinden yeni surum kontrolu yapar (`electron-updater`). Bunun calismasi icin:
+Uygulama tamamen kendi kendine guncellenir (`electron-updater`): acilista, her 4 saatte bir otomatik olarak ve Ayarlar > Guncelleme'den manuel olarak GitHub Releases uzerinden yeni surum kontrolu yapar. Bunun calismasi icin:
 
 1. `package.json` > `build.publish` altindaki `owner`/`repo` alanlarini kendi GitHub kullanici adiniz ve repo isminizle degistirin.
 2. Kodu bir GitHub reposuna push'layin (henuz bir git deposu yok; `git init` ile baslayabilirsiniz).
 3. Yeni bir surum yayinlamak icin: `GH_TOKEN=<kisisel-erisim-tokeniniz> npm run release` — bu, `dist/` altinda kurulum dosyalarini uretir VE GitHub Releases'e otomatik yukler (`latest.yml` dahil, electron-updater'in kontrol ettigi dosya).
-4. Kullanicidaki eski surumler acilista veya "Guncellemeleri kontrol et" ile bu Release'i bulup arka planda indirir; "Yeniden baslat ve guncelle" butonuna basildiginda kurulup uygulama yeniden baslar.
+4. Kullanicidaki eski surumler yeni bir Release'i bulunca arka planda otomatik indirir. Indirme bitince Windows bildirimi gosterilir ve **60 saniye icinde uygulama kendini otomatik olarak yeniden baslatip gunceller** — hicbir tikma gerekmez. Daha erken guncellemek isterseniz bildirime veya Ayarlar > Guncelleme'deki "Yeniden baslat ve guncelle" butonuna tiklayabilirsiniz.
 
 Paketlenmemis (gelistirme) modda "Guncellemeleri kontrol et" butonu bilgilendirici bir mesaj gosterir, hata vermez — auto-update sadece `npm run pack`/`npm run release` ile paketlenmis kurulumlarda calisir.
+
+## Uyelik ve Google ile giris (Supabase)
+
+Ayarlar > Hesap bolumunden Google hesabiyla giris yapilabilir; giris yapan kullanicinin ayarlari ve izleme listesi Supabase'e (Postgres + Auth) kaydedilir, boylece ayni hesapla baska bir bilgisayarda da senkronize olur.
+
+**Nasil calisir:**
+- Google girisi, uygulamanin gecici olarak actigi bir `http://127.0.0.1:<port>/callback` yerel sunucusu ile PKCE akisi kullanir; sistem tarayicisinda Google giris ekrani acilir, tamamlaninca tarayici bu yerel adrese yonlendirilir ve uygulama oturumu tamamlar.
+- Oturum bilgisi (refresh token) `safeStorage` ile diskte sifreli olarak saklanir, uygulama kapatilip acildiginda tekrar giris istemez.
+- Ilk girişte: bulutta bu hesaba ait veri varsa (baska bir cihazdan) o veri cekilip yerel ayarlarin/izleme listesinin uzerine yazilir; yoksa mevcut yerel veriniz buluta yuklenir.
+- Sonraki her ayar/izleme listesi degisikligi, giris yapiliyken birkaç saniye içinde otomatik olarak buluta yazilir (debounce).
+
+**Bu ozelligin calismasi icin gerekenler (sizin yapmaniz gerekiyor, ben yapamam):**
+
+1. Supabase projenizin SQL Editor'unde asagidaki tabloyu ve RLS politikalarini olusturun:
+
+```sql
+create table if not exists public.user_data (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  settings jsonb not null default '{}'::jsonb,
+  watchlist jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.user_data enable row level security;
+
+create policy "Users can view own data" on public.user_data
+  for select using (auth.uid() = user_id);
+
+create policy "Users can insert own data" on public.user_data
+  for insert with check (auth.uid() = user_id);
+
+create policy "Users can update own data" on public.user_data
+  for update using (auth.uid() = user_id);
+```
+
+2. **Geri Bildirim** (Ayarlar > Geri Bildirim) icin ayrica su tabloyu olusturun (giris yapmis olsun olmasin herkes gonderebilsin diye insert herkese acik, okuma/degistirme kapali):
+
+```sql
+create table if not exists public.feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  email text,
+  message text not null,
+  app_version text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.feedback enable row level security;
+
+create policy "Anyone can submit feedback" on public.feedback
+  for insert with check (true);
+```
+
+3. Supabase Dashboard > Authentication > Providers > Google'i etkinlestirin. Bunun icin bir Google Cloud projesinde OAuth Client ID/Secret olusturup (Google Cloud Console > APIs & Services > Credentials), Authorized redirect URI olarak Supabase'in kendi callback adresini eklemeniz gerekir: `https://<proje-id>.supabase.co/auth/v1/callback` (bu adres, Supabase'in size Google provider ayarlari sayfasinda gosterdigi adresle ayni olmalidir). Client ID/Secret'i Supabase'deki Google provider ayarlarina yapistirin.
+
+Bu iki adim tamamlanmadan "Google ile Giris Yap" butonu "provider is not enabled" hatasi verir (bu, uygulamadaki bir hata degil, henuz tamamlanmamis bir kurulum adimidir).
+
+`src/main/auth.ts` icindeki `SUPABASE_URL`/`SUPABASE_ANON_KEY` degerleri sizin projenize aittir; bu anahtar herkese acik/istemci tarafinda kullanilmak icin tasarlanmistir (guvenlik RLS politikalariyla saglanir), ancak `service_role` anahtarini asla koda veya baska bir yere eklemeyin.
 
 ## Veri kaynaklari (ucretsiz, API anahtari gerekmez)
 
@@ -56,31 +118,62 @@ Her satirin uzerine gelince beliren `⧉` butonuna basmak o ogeyi kendi kucuk, h
 
 ## Miknatis (pencere yapistirma)
 
-Miknatis acikken (varsayilan: acik) herhangi bir Mini Takip penceresini (ana pencere, mini pencereler, ayarlar) suruklerken ekran kenarlarina veya diger Mini Takip pencerelerinin kenarlarina ~16px yaklastiginda pencere otomatik olarak o kenara yapisir. Ayarlar penceresinden acilip kapatilabilir.
+Miknatis acikken (varsayilan: acik) herhangi bir Piyasamatik penceresini (ana pencere, mini pencereler, ayarlar) suruklerken ekran kenarlarina veya diger Piyasamatik pencerelerinin kenarlarina ~16px yaklastiginda pencere otomatik olarak o kenara yapisir. Ayarlar penceresinden acilip kapatilabilir.
 
 ## Gorunumler
 
-Ana pencerenin dis bardaki disli (⚙) simgesinden Ayarlar penceresi acilir; buradan **Liste** (varsayilan, detayli satirlar), **Kompakt** (dar satirlar, kategori etiketi gizli) veya **Izgara** (2 sutunlu kart gorunumu) secilebilir; degisiklik aninda ana pencereye yansir.
+Ana pencerenin dis bardaki disli (⚙) simgesinden Ayarlar penceresi acilir; buradan asagidaki gorunum modlarindan biri secilebilir; degisiklik aninda ana pencereye yansir:
+- **Liste**: detayli satirlar (kategori, sparkline, K/Z dahil)
+- **Kompakt**: dar satirlar, kategori etiketi ve sparkline gizli
+- **Izgara** (varsayilan): sabit 120px genislikte, otomatik satirlara bolunen kart gorunumu; kategori etiketi (DOVIZ, HISSE, ...) varsayilan olarak gizlidir, Ayarlar > Gorunum'den acilabilir. Ana pencerenin varsayilan genisligi (390px), ilk acilista tam olarak 3 kart yan yana sigacak sekilde ayarlanmistir (pencere yine de serbestce yeniden boyutlandirilabilir).
+- **Tablo**: tek satirlik, yatay hizali sutunlar (rakip uygulamalardaki klasik piyasa tablosu gorunumu)
+- **Kayan Serit**: bu secim ana pencerede degil, ayri, ince ve her zaman ustte kalan bir "kayan serit" penceresinde acilir (klasik borsa bandi gibi) — tum ogeleri fiyat + degisim ile yatayda kaydirir (uzerine gelince kayma durur). Ana pencerenin kendi listesi bu modda bos kalir, sadece serit penceresinin acildigini belirtir. Serit penceresi kapatilirsa gorunum otomatik olarak Izgara'ya doner; konum/boyutu `settings.json` icinde `tickerWindowBounds` altinda hatirlanir.
+- **Isi Haritasi**: her ogenin degisim yuzdesine gore yesil/kirmizi renk yogunlugunda karolar (Finviz benzeri)
 
-## Ayarlar penceresi
+## Ayarlar penceresi (mega-menu)
 
-Ana pencere basligindaki disli simgesinden acilir. Tek bir yerden yonetilebilenler:
-- Yenileme araligi (saniye)
-- Windows ile baslatma
-- Miknatis acik/kapali
-- Genel kisayol acik/kapali (`Ctrl+Shift+M` ile goster/gizle, her yerden calisir)
-- Gorunum modu (Liste/Kompakt/Izgara) ve tema (Koyu/Acik)
-- Izleme listesindeki her oge icin "Detay" altinda: portfoy (adet + ortalama maliyet) ve fiyat alarmi (ustu/alti), ayri pencerede goster/kapat, listeden kaldir
+Ana pencere basligindaki disli simgesinden acilir. Sol tarafta bir menu ile gruplara ayrilmistir:
+- **Genel**: yenileme araligi, Windows ile baslatma, sistem tepsisi simgesi acik/kapali, genel kisayol (`Ctrl+Shift+M`) acik/kapali
+- **Pencereler**: ana pencereyi / mini pencereleri ayri ayri her zaman ustte tutma, miknatis, otomatik sigdir, saydam pencereler ve saydamlik orani (%40-%100)
+- **Gorunum**: gorunum modu (Liste/Kompakt/Izgara/Tablo/Kayan Serit/Isi Haritasi), Izgara'da kategori etiketini goster/gizle, tema (Koyu/Acik), renk sablonu (Mavi/Altin/Yesil/Kirmizi/Mor vurgu rengi)
+- **Guncelleme**: surum bilgisi, manuel guncelleme kontrolu (otomatik kontrol/indirme/kurulum zaten arka planda calisir)
+- **Hesap**: Google ile giris/cikis, bulut senkronizasyon durumu
+- **Izleme Listesi**: her oge icin "Detay" altinda portfoy (adet + ortalama maliyet), Fiyat alarmi (ustu/alti), Yuzde alarmi (gunluk % artis/azalis) ve Oran alarmi (baska bir izlenen ogeyle karsilastirma), ayri pencerede goster/kapat, favori, listeden kaldir
+- **Alarm**: izlenen tum ogelere birden uygulanan genel gunluk % artis/azalis alarmi
+- **Geri Bildirim**: oneri, hata bildirimi veya istek yazip gonderme (Supabase'e kaydedilir; giris yapmis kullanicilar icin hesap/e-posta otomatik eklenir, giris yapmamis kullanicilar da e-posta alanini bos birakip anonim gonderebilir)
 
-Izleme listesi ve ayarlar `%APPDATA%/Mini Takip/` altinda `watchlist.json` ve `settings.json` olarak saklanir (mini pencerelerin konum/boyutlari da `settings.json` icinde `detachedWindows` altinda tutulur).
+Izleme listesi ve ayarlar `%APPDATA%/Piyasamatik/` altinda `watchlist.json` ve `settings.json` olarak saklanir (mini pencerelerin konum/boyutlari da `settings.json` icinde `detachedWindows` altinda tutulur). Uygulama daha once "Mini Takip" adiyla calistiysa, ilk acilista `%APPDATA%/Mini Takip/` icindeki veriler otomatik olarak yeni klasore tasinir.
 
-## Kategori sekmeleri ve siralama
+## Sag tik menusu
 
-Ana pencerede liste ustunde Tumu/Doviz/Altin/Hisse/Endeks/Kripto sekmeleri ile filtreleme yapilabilir. Satirlar surukle-birak ile yeniden siralanabilir (fare ile bir satiri tutup baska bir satirin uzerine birakmak yeterlidir); siralama kalicidir.
+Ana pencere, mini pencereler, kayan serit penceresi, grafik penceresi ve ayarlar penceresinin herhangi bir yerine sag tiklamak, o pencereye ozgu hizli islem menusunu acar (ana pencerede: yenile, oge ekle, kur cevirici, haberler, miknatis/otomatik sigdir/her zaman ustte acik-kapali, ayarlar, gizle, cikis; mini pencerede: gecmis grafik, her zaman ustte acik-kapali, listeye don; kayan serit penceresinde: simdi yenile, listeye don). Ana pencere ve mini pencereler icin "her zaman ustte" birbirinden bagimsiz ayarlanabilir — biri acik, digeri kapali olabilir.
 
-## Fiyat alarmlari
+## Otomatik sigdir
 
-Ayarlar penceresinde bir ogenin "Detay" panelinden "Alarm ustu"/"Alarm alti" degerleri girilebilir. Fiyat o esige ulastiginda Windows bildirimi (toast) gosterilir; fiyat esigin diger tarafina donup tekrar gelene kadar ayni alarm bir daha tetiklenmez (yeniden "silahlanir"). Ana listede alarm tanimli ogelerin yaninda kucuk bir nokta gorunur.
+Varsayilan olarak acik. Ana pencere, icerigindeki (goster ilen ogeler + secili gorunum modu) gercek yuksekligine gore kendini otomatik daraltip genisletir (genislik sabit kalir, siz ayarlarsiniz). Mini pencereler ise her zaman sabit, ideal olcude (220x90) acilir — boylece boyut oge verisine (isim/fiyat uzunlugu) gore degismez, tum widget'lar tutarli gorunur. Ana pencere basligindaki simgeden acilip kapatilabilir; Ayarlar > Pencereler'den de yonetilir.
+
+## Saydamlik
+
+Ana pencere basligindaki saydamlik simgesiyle (veya Ayarlar > Pencereler'den) acilip kapatilabilir; acikken tum Piyasamatik pencereleri (ana, mini, kayan serit, grafik) belirlenen orana gore saydamlasir. Saydamlik orani Ayarlar > Pencereler'deki kaydirici ile %40 ile %100 arasinda ayarlanabilir (varsayilan %88).
+
+## Yon oku
+
+Her satirda (ve mini pencerede) fiyatin yaninda kucuk bir ok belirir: bir onceki veriye gore fiyat yukselmisse yesil `▲`, dusmusse kirmizi `▼`, degismemisse gri `▬`. Bu, gunluk degisim yuzdesinden (`row-change`) bagimsiz olarak sadece en son iki guncelleme arasindaki ani yonu gosterir.
+
+## Sekmeler, kategori filtresi ve siralama
+
+Ana pencerede liste ustunde sadece iki sekme gorunur: **★ Favoriler** ve **Tumu**. "Tumu" secildiginde yaninda cikan acilir kutudan (Tumu/Doviz/Altin/Hisse/Endeks/Kripto) belirli bir kategoriye gore de filtreleme yapilabilir. Satirlar surukle-birak ile yeniden siralanabilir (fare ile bir satiri tutup baska bir satirin uzerine birakmak yeterlidir); siralama kalicidir.
+
+## Fiyat, yuzde ve oran alarmlari
+
+Yeni bir oge izleme listesine eklendiginde Ayarlar penceresi otomatik acilir ve o ogenin "Detay" paneline odaklanir, boylece alarm kurulumuna hemen devam edebilirsiniz. Bu panelde uc ayri alarm grubu bulunur:
+- **Fiyat** (Ustu / Alti): mutlak bir fiyat esigi (orn. USD/TRY 35.00 ustune ciktiginda).
+- **Yuzde** (% artis / % azalis): o ogenin gunluk degisim yuzdesi (`row-change` ile ayni deger) belirtilen esigi gectiginde (orn. %3 artis).
+- **Oran**: izleme listenizdeki baska bir ogeyi "Karsilastirilacak oge" acilir kutusundan secip, bu ogenin fiyatinin secilen ogeye bolumunden elde edilen oranin (korelasyon orani) belirli bir esigin ustune/altina gectiginde uyar (orn. Altin/Dolar orani belli bir degerin ustune ciktiginda). Karsilastirilan oge izleme listesinden kaldirilirsa bu alarm otomatik olarak temizlenir.
+
+Herhangi bir esige ulasildiginda Windows bildirimi (toast) gosterilir; esik asildiktan sonra deger tekrar esigin diger tarafina donup gelmeden ayni alarm bir daha tetiklenmez (yeniden "silahlanir"). Ana listede alarm tanimli ogelerin yaninda kucuk bir nokta gorunur.
+
+**Genel alarm** (Ayarlar > Alarm): tek bir gunluk % artis/azalis esigi belirleyip, izleme listenizdeki **tum** ogelere aym anda uygulayabilirsiniz — her ogeye tek tek gitmeden. Bu, yukaridaki oge-bazli alarmlardan bagimsiz calisir; ikisi ayni oge icin birlikte de tanimlanabilir. Ornek: genel alarmda hem artis hem azalis esigini %5 yaparsaniz, izlenen herhangi bir oge gun icinde %5 veya daha fazla hareket ettiginde bildirim alirsiniz.
 
 ## Portfoy (adet/maliyet) takibi
 
@@ -96,11 +189,11 @@ ABD hisse/endeks ve kripto ogelerinin yaninda son donem fiyat hareketini gostere
 
 ## Favoriler
 
-Her satirin solunda beliren yildiz (`☆`/`★`) bir ogeyi favoriye ekler/cikarir. Favoriler ana listede "★ Favoriler" basligi altinda her zaman en ustte, geri kalanlar "Tumu" basligi altinda gosterilir (aktif bir kategori sekmesi secili olsa bile favoriler o kategori icinde yine en usttedir). Favori durumu Ayarlar penceresindeki izleme listesinden de degistirilebilir.
+Her satirin solunda beliren yildiz (`☆`/`★`) bir ogeyi favoriye ekler/cikarir. Ana pencerenin "★ Favoriler" sekmesine tiklayinca sadece favori isaretli ogeler listelenir. Favori durumu Ayarlar penceresindeki izleme listesinden de degistirilebilir.
 
 ## Pencere konumu hafizasi
 
-Ana pencere ve her ayri (mini) widget penceresi kapatilip acildiginda son birakildiklari konum ve boyutta acilir (`settings.json` icinde saklanir). Bir monitor sokulup cikarilmasi gibi durumlarda kayitli konum artik hicbir ekranda gorunmuyorsa (en az 40x40 piksel ortusme yoksa), uygulama bunu fark edip varsayilan bir konuma geri doner — boylece pencere "ekran disinda kayip" hale gelmez.
+Ana pencere, her ayri (mini) widget penceresi, ayarlar penceresi ve grafik penceresi kapatilip acildiginda (veya surukleyip birakildiginda) son birakildiklari konum ve boyutta acilir (`settings.json` icinde saklanir). Bir monitor sokulup cikarilmasi gibi durumlarda kayitli konum artik hicbir ekranda gorunmuyorsa (en az 40x40 piksel ortusme yoksa), uygulama bunu fark edip varsayilan bir konuma geri doner — boylece pencere "ekran disinda kayip" hale gelmez.
 
 ## Widget rengi
 
@@ -112,6 +205,8 @@ Her satirda beliren kucuk grafik simgesine tiklamak, o ogenin gecmis fiyat harek
 - **Hisse/Endeks (Yahoo Finance)**: 1G=1 gunluk 5 dakikalik, 1H=5 gunluk 30 dakikalik, 1A/3A/6A/1Y=gunluk kapanislar (1Y icin ~250 nokta).
 - **Kripto (CoinGecko)**: gun sayisina gore otomatik cozunurluk (1Y icin ~365 gunluk nokta).
 - **Doviz/Altin**: ucretsiz bir gecmis veri kaynagi olmadigindan bu pencere "gecmis veri bulunamiyor" mesaji gosterir (sparkline'daki ayni sinirlama).
+
+Grafik penceresinin ust kisminda o anki fiyat ve secili aralik boyunca toplam degisim yuzdesi one cikan bir ozet olarak gosterilir. Grafigin kendisi alani boyayan bir dolgu, ince kilavuz cizgileri ve son noktayi vurgulayan bir nokta ile cizilir; fare ile uzerine gelince o noktanin tarihi/fiyati ve baslangica gore yuzde degisimi bir ipucu kutusunda gorunur. **Iki nokta arasindaki artisi/azalisi yuzde olarak olcmek icin** grafik uzerinde bir noktadan diger noktaya suruklemeniz yeterli — secili araligi vurgulayan bir bant ve o iki nokta arasindaki yuzde + mutlak fark + tarih araligini gosteren bir rozet belirir; rozet fareyi birakinca da ekranda kalir, temizlemek icin bos bir yere tiklamak veya `Esc` tusuna basmak yeterlidir.
 
 ## Haber ozeti
 

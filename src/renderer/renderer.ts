@@ -1,8 +1,8 @@
 import type { WatchlistItem, Quote, SearchResult, ItemCategory } from '../main/providers/types';
-import type { ViewMode, ThemeMode } from '../main/store';
+import type { ViewMode, ThemeMode, AccentTheme } from '../main/store';
 import type { ConvertCode } from '../main/providers/truncgil';
 import type { NewsItem } from '../main/providers';
-import { formatPrice, formatChange, changeClass, CHART_ICON, MAGNET_ICON, NEWS_ICON } from './format';
+import { formatPrice, formatChange, changeClass, CHART_ICON, MAGNET_ICON, NEWS_ICON, AUTOFIT_ICON, TRANSPARENT_ICON, getDirectionIndicator } from './format';
 
 const CATEGORY_LABEL: Record<ItemCategory, string> = {
   currency: 'Doviz',
@@ -12,8 +12,7 @@ const CATEGORY_LABEL: Record<ItemCategory, string> = {
   crypto: 'Kripto',
 };
 
-const TABS: { key: ItemCategory | 'all'; label: string }[] = [
-  { key: 'all', label: 'Tumu' },
+const CATEGORY_OPTIONS: { key: ItemCategory; label: string }[] = [
   { key: 'currency', label: 'Doviz' },
   { key: 'gold', label: 'Altin' },
   { key: 'stock', label: 'Hisse' },
@@ -25,14 +24,24 @@ let watchlist: WatchlistItem[] = [];
 let quotes: Record<string, Quote> = {};
 let sparklines: Record<string, number[]> = {};
 let detachedIds: string[] = [];
-let activeFilter: ItemCategory | 'all' = 'all';
+let activeFilter: ItemCategory | 'all' | 'favorites' = 'all';
 let draggedId: string | null = null;
 let convertCodesLoaded = false;
 let magnetEnabled = true;
+let autofitEnabled = true;
+let transparentEnabled = false;
+let gridShowCategory = false;
 let newsLoaded = false;
+const lastPrices: Record<string, number> = {};
+let directions: Record<string, { html: string; cls: string }> = {};
+let currentViewMode: ViewMode = 'list';
 
 const btnMagnet = document.getElementById('btn-magnet') as HTMLButtonElement;
 btnMagnet.innerHTML = MAGNET_ICON;
+const btnAutofit = document.getElementById('btn-autofit') as HTMLButtonElement;
+btnAutofit.innerHTML = AUTOFIT_ICON;
+const btnTransparent = document.getElementById('btn-transparent') as HTMLButtonElement;
+btnTransparent.innerHTML = TRANSPARENT_ICON;
 const btnNews = document.getElementById('btn-news') as HTMLButtonElement;
 btnNews.innerHTML = NEWS_ICON;
 
@@ -51,8 +60,37 @@ const convertResultEl = document.getElementById('convert-result') as HTMLDivElem
 const newsPanel = document.getElementById('news-panel') as HTMLDivElement;
 const newsListEl = document.getElementById('news-list') as HTMLDivElement;
 
+const statusCountEl = document.getElementById('status-count') as HTMLSpanElement;
+const statusUpdatedEl = document.getElementById('status-updated') as HTMLSpanElement;
+const statusVersionEl = document.getElementById('status-version') as HTMLSpanElement;
+let lastUpdateAt: number | null = null;
+
+function formatRelativeSeconds(ms: number): string {
+  const secs = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (secs < 60) return `${secs}sn once`;
+  const mins = Math.round(secs / 60);
+  return `${mins}dk once`;
+}
+
+function renderStatusBar() {
+  statusCountEl.textContent = `${watchlist.length} oge izleniyor`;
+  statusUpdatedEl.textContent =
+    lastUpdateAt != null
+      ? `Son guncelleme: ${new Date(lastUpdateAt).toLocaleTimeString('tr-TR')} (${formatRelativeSeconds(lastUpdateAt)})`
+      : 'Henuz guncellenmedi';
+}
+
+window.miniTakip.getAppVersion().then((version) => {
+  statusVersionEl.textContent = `v${version}`;
+});
+
+setInterval(() => {
+  if (lastUpdateAt != null) renderStatusBar();
+}, 1000);
+
 function applyViewMode(viewMode: ViewMode) {
-  document.body.classList.remove('view-list', 'view-compact', 'view-grid');
+  currentViewMode = viewMode;
+  document.body.classList.remove('view-list', 'view-compact', 'view-grid', 'view-table', 'view-ticker', 'view-heatmap');
   document.body.classList.add(`view-${viewMode}`);
 }
 
@@ -64,19 +102,84 @@ function applyMagnetButton() {
   btnMagnet.classList.toggle('active', magnetEnabled);
 }
 
+function applyAutofitButton() {
+  btnAutofit.classList.toggle('active', autofitEnabled);
+}
+
+function applyTransparentButton() {
+  btnTransparent.classList.toggle('active', transparentEnabled);
+}
+
+function applyGridShowCategory(value: boolean) {
+  gridShowCategory = value;
+  document.body.classList.toggle('grid-show-category', value);
+}
+
+function applyAccentTheme(theme: AccentTheme) {
+  document.body.classList.remove('accent-gold', 'accent-green', 'accent-red', 'accent-purple');
+  if (theme !== 'blue') document.body.classList.add(`accent-${theme}`);
+}
+
+function requestAutofit() {
+  if (!autofitEnabled) return;
+  // #list has an explicit height (calc() against the window size) so it can scroll;
+  // that means scrollHeight normally just reflects the box's own (already-inflated)
+  // height instead of the content's natural height, and the window could never
+  // shrink back down. Clear the constraint just long enough to measure real content.
+  const prevHeight = listEl.style.height;
+  listEl.style.height = 'auto';
+  const contentHeight = listEl.scrollHeight;
+  listEl.style.height = prevHeight;
+
+  const height = 34 + 30 + contentHeight + 20 + 12;
+  window.miniTakip.requestAutofit(document.body.clientWidth, height);
+}
+
 function renderTabs() {
   tabsEl.innerHTML = '';
-  for (const tab of TABS) {
-    const btn = document.createElement('button');
-    btn.textContent = tab.label;
-    btn.className = tab.key === activeFilter ? 'tab active' : 'tab';
-    btn.addEventListener('click', () => {
-      activeFilter = tab.key;
-      renderTabs();
-      render();
-    });
-    tabsEl.appendChild(btn);
+
+  const favBtn = document.createElement('button');
+  favBtn.textContent = '★ Favoriler';
+  favBtn.className = activeFilter === 'favorites' ? 'tab active' : 'tab';
+  favBtn.addEventListener('click', () => {
+    activeFilter = 'favorites';
+    renderTabs();
+    render();
+  });
+  tabsEl.appendChild(favBtn);
+
+  const allBtn = document.createElement('button');
+  allBtn.textContent = 'Tumu';
+  allBtn.className = activeFilter !== 'favorites' ? 'tab active' : 'tab';
+  allBtn.addEventListener('click', () => {
+    activeFilter = 'all';
+    renderTabs();
+    render();
+  });
+  tabsEl.appendChild(allBtn);
+
+  // Only meaningful once "Tumu" is active; lets the user narrow the list to
+  // a single category without needing a dedicated tab button per category.
+  const select = document.createElement('select');
+  select.className = 'category-select';
+  select.disabled = activeFilter === 'favorites';
+  const allOption = document.createElement('option');
+  allOption.value = 'all';
+  allOption.textContent = 'Tumu';
+  select.appendChild(allOption);
+  for (const cat of CATEGORY_OPTIONS) {
+    const opt = document.createElement('option');
+    opt.value = cat.key;
+    opt.textContent = cat.label;
+    select.appendChild(opt);
   }
+  select.value = activeFilter === 'favorites' ? 'all' : activeFilter;
+  select.addEventListener('change', () => {
+    activeFilter = select.value === 'all' ? 'all' : (select.value as ItemCategory);
+    renderTabs();
+    render();
+  });
+  tabsEl.appendChild(select);
 }
 
 function buildSparklineSvg(values: number[]): string {
@@ -97,6 +200,16 @@ function buildSparklineSvg(values: number[]): string {
 
 function attachDragHandlers(row: HTMLDivElement, item: WatchlistItem) {
   row.draggable = true;
+  // HTML5 draggable="true" elements can swallow the right-click contextmenu event
+  // on Windows/Chromium (right-click is ambiguous with the native drag gesture).
+  // Momentarily drop draggable for the right button so the context menu fires,
+  // then restore it so left-click drag-to-reorder keeps working.
+  row.addEventListener('mousedown', (e) => {
+    if (e.button === 2) row.draggable = false;
+  });
+  row.addEventListener('contextmenu', () => {
+    row.draggable = true;
+  });
   row.addEventListener('dragstart', (e) => {
     draggedId = item.id;
     e.dataTransfer?.setData('text/plain', item.id);
@@ -190,15 +303,27 @@ function buildRow(item: WatchlistItem): HTMLDivElement {
     err.textContent = 'veri alinamadi';
     right.appendChild(err);
   } else {
+    const priceRow = document.createElement('div');
+    priceRow.className = 'row-price-line';
+
+    const dir = directions[item.id];
+    if (dir) {
+      const dirEl = document.createElement('span');
+      dirEl.className = `dir-arrow ${dir.cls}`;
+      dirEl.innerHTML = dir.html;
+      priceRow.appendChild(dirEl);
+    }
+
     const price = document.createElement('div');
     price.className = 'row-price';
     price.textContent = quote ? formatPrice(quote.price, quote.currency) : '...';
+    priceRow.appendChild(price);
 
     const change = document.createElement('div');
     change.className = `row-change ${changeClass(quote?.changePercent ?? null)}`;
     change.textContent = quote ? formatChange(quote.changePercent) : '';
 
-    right.appendChild(price);
+    right.appendChild(priceRow);
     right.appendChild(change);
 
     if (quote && item.quantity && item.costBasis != null) {
@@ -255,41 +380,94 @@ function buildRow(item: WatchlistItem): HTMLDivElement {
   return row;
 }
 
+function buildHeatTile(item: WatchlistItem): HTMLDivElement {
+  const quote = quotes[item.id];
+  const tile = document.createElement('div');
+  tile.className = 'heat-tile';
+
+  const pct = quote && !quote.error ? (quote.changePercent ?? 0) : 0;
+  const isUp = pct >= 0;
+  const intensity = Math.min(Math.abs(pct) / 5, 1) * 0.75 + 0.15;
+  tile.style.backgroundColor = isUp
+    ? `rgba(38, 166, 91, ${intensity})`
+    : `rgba(219, 68, 68, ${intensity})`;
+
+  const label = document.createElement('div');
+  label.className = 'heat-label';
+  label.textContent = item.label;
+  tile.appendChild(label);
+
+  const price = document.createElement('div');
+  price.className = 'heat-price';
+  price.textContent = quote && !quote.error ? formatPrice(quote.price, quote.currency) : '...';
+  tile.appendChild(price);
+
+  const change = document.createElement('div');
+  change.className = 'heat-change';
+  change.textContent = quote && !quote.error ? formatChange(quote.changePercent) : '';
+  tile.appendChild(change);
+
+  tile.addEventListener('click', () => window.miniTakip.openChart(item.id));
+  return tile;
+}
+
+function renderHeatmap(visible: WatchlistItem[]) {
+  const grid = document.createElement('div');
+  grid.className = 'heat-grid';
+  for (const item of visible) grid.appendChild(buildHeatTile(item));
+  listEl.appendChild(grid);
+}
+
 function render() {
   listEl.innerHTML = '';
-  const visible = activeFilter === 'all' ? watchlist : watchlist.filter((i) => i.category === activeFilter);
+
+  if (currentViewMode === 'ticker') {
+    // The ticker view runs in its own dedicated window (see ticker.ts), not
+    // inline here, so the main window just points to it instead.
+    const info = document.createElement('div');
+    info.className = 'empty-state';
+    info.textContent = 'Kayan Serit ayri bir pencerede acildi.';
+    listEl.appendChild(info);
+    requestAutofit();
+    return;
+  }
+
+  let visible: WatchlistItem[];
+  if (activeFilter === 'all') visible = watchlist;
+  else if (activeFilter === 'favorites') visible = watchlist.filter((i) => i.favorite);
+  else visible = watchlist.filter((i) => i.category === activeFilter);
 
   if (visible.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'empty-state';
-    empty.textContent = watchlist.length === 0 ? 'Izleme listeniz bos. Eklemek icin + butonuna basin.' : 'Bu kategoride oge yok.';
+    empty.textContent =
+      watchlist.length === 0
+        ? 'Izleme listeniz bos. Eklemek icin + butonuna basin.'
+        : activeFilter === 'favorites'
+          ? 'Henuz favori eklemediniz.'
+          : 'Bu kategoride oge yok.';
     listEl.appendChild(empty);
     return;
   }
 
-  const favorites = visible.filter((i) => i.favorite);
-  const rest = visible.filter((i) => !i.favorite);
-
-  if (favorites.length > 0) {
-    const header = document.createElement('div');
-    header.className = 'section-header';
-    header.textContent = '★ Favoriler';
-    listEl.appendChild(header);
-    for (const item of favorites) listEl.appendChild(buildRow(item));
-
-    if (rest.length > 0) {
-      const restHeader = document.createElement('div');
-      restHeader.className = 'section-header';
-      restHeader.textContent = 'Tumu';
-      listEl.appendChild(restHeader);
-    }
-  }
-
-  for (const item of rest) listEl.appendChild(buildRow(item));
+  if (currentViewMode === 'heatmap') renderHeatmap(visible);
+  else for (const item of visible) listEl.appendChild(buildRow(item));
+  requestAutofit();
 }
 
 window.miniTakip.onQuotesUpdated((updated) => {
+  const newDirections: Record<string, { html: string; cls: string }> = {};
+  for (const id of Object.keys(updated)) {
+    const q = updated[id];
+    if (!q.error) {
+      newDirections[id] = getDirectionIndicator(q.price, lastPrices[id]);
+      lastPrices[id] = q.price;
+    }
+  }
+  directions = newDirections;
   quotes = updated;
+  lastUpdateAt = Date.now();
+  renderStatusBar();
   render();
 });
 
@@ -300,6 +478,7 @@ window.miniTakip.onSparklinesUpdated((updated) => {
 
 window.miniTakip.onWatchlistChanged((updated) => {
   watchlist = updated;
+  renderStatusBar();
   render();
 });
 
@@ -309,10 +488,30 @@ window.miniTakip.onDetachedChanged((ids) => {
 });
 
 window.miniTakip.onSettingsChanged((settings) => {
+  const viewModeChanged = settings.viewMode !== currentViewMode;
   applyViewMode(settings.viewMode);
   applyTheme(settings.themeMode);
+  applyAccentTheme(settings.accentTheme);
   magnetEnabled = settings.magnetEnabled;
   applyMagnetButton();
+  autofitEnabled = settings.autofitEnabled;
+  applyAutofitButton();
+  transparentEnabled = settings.transparentEnabled;
+  applyTransparentButton();
+  applyGridShowCategory(settings.gridShowCategory);
+  if (viewModeChanged) render();
+  else if (autofitEnabled) requestAutofit();
+});
+
+window.miniTakip.onMenuAction((action) => {
+  if (action === 'open-add') document.getElementById('btn-add')!.click();
+  else if (action === 'open-convert') document.getElementById('btn-convert')!.click();
+  else if (action === 'open-news') btnNews.click();
+});
+
+document.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
+  window.miniTakip.showContextMenu();
 });
 
 document.getElementById('btn-refresh')!.addEventListener('click', () => {
@@ -325,6 +524,17 @@ btnMagnet.addEventListener('click', async () => {
   const updated = await window.miniTakip.setSettings({ magnetEnabled: !magnetEnabled });
   magnetEnabled = updated.magnetEnabled;
   applyMagnetButton();
+});
+btnAutofit.addEventListener('click', async () => {
+  const updated = await window.miniTakip.setSettings({ autofitEnabled: !autofitEnabled });
+  autofitEnabled = updated.autofitEnabled;
+  applyAutofitButton();
+  if (autofitEnabled) requestAutofit();
+});
+btnTransparent.addEventListener('click', async () => {
+  const updated = await window.miniTakip.setSettings({ transparentEnabled: !transparentEnabled });
+  transparentEnabled = updated.transparentEnabled;
+  applyTransparentButton();
 });
 document.getElementById('btn-minimize')!.addEventListener('click', () => {
   window.miniTakip.minimizeWindow();
@@ -395,9 +605,13 @@ function renderSearchResults(results: SearchResult[]) {
         label: res.label,
         currency: res.currency,
       });
+      const newItem = watchlist[watchlist.length - 1];
       render();
       addPanel.classList.add('hidden');
       window.miniTakip.refreshNow();
+      // Open Settings straight to this item's alarm/portfolio form, since the
+      // user just added it and alarms are most naturally set up right away.
+      window.miniTakip.openSettings(newItem.id);
     });
 
     searchResultsEl.appendChild(row);
@@ -518,8 +732,15 @@ async function init() {
   sparklines = sparks;
   applyViewMode(settings.viewMode);
   applyTheme(settings.themeMode);
+  applyAccentTheme(settings.accentTheme);
   magnetEnabled = settings.magnetEnabled;
   applyMagnetButton();
+  autofitEnabled = settings.autofitEnabled;
+  applyAutofitButton();
+  transparentEnabled = settings.transparentEnabled;
+  applyTransparentButton();
+  applyGridShowCategory(settings.gridShowCategory);
+  renderStatusBar();
   render();
 }
 

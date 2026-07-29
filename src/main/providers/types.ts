@@ -12,6 +12,15 @@ export interface WatchlistItem {
   // Price target alerts (optional; either or both may be set).
   alertAbove?: number;
   alertBelow?: number;
+  // Daily percent-change alerts (optional; either or both may be set).
+  // Compared against the provider's own changePercent (day change).
+  alertUpPercent?: number;
+  alertDownPercent?: number;
+  // Ratio (correlation) alert: compares this item's price against another
+  // tracked item's price (price / alertRatioTargetId's price).
+  alertRatioTargetId?: string;
+  alertRatioAbove?: number;
+  alertRatioBelow?: number;
   favorite?: boolean;
   // Custom accent color (hex) for this item's row / detached widget.
   color?: string;

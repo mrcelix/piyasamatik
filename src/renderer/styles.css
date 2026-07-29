@@ -49,6 +49,26 @@ body {
   font-size: 13px;
   overflow: hidden;
   user-select: none;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+/* Keyboard-only focus ring (mouse clicks don't trigger :focus-visible), applied
+   broadly so every interactive element gets consistent, visible focus. */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }
 
 #titlebar {
@@ -83,6 +103,7 @@ body {
   border-radius: 4px;
   font-size: 13px;
   line-height: 1;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 #titlebar-actions button:hover {
@@ -94,7 +115,9 @@ body {
   display: block;
 }
 
-#btn-magnet.active {
+#btn-magnet.active,
+#btn-autofit.active,
+#btn-transparent.active {
   color: var(--accent);
 }
 
@@ -117,6 +140,12 @@ body {
   padding: 4px 10px;
   white-space: nowrap;
   flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.tab:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text-dim);
 }
 
 .tab.active {
@@ -124,21 +153,78 @@ body {
   color: var(--on-accent);
 }
 
+.category-select {
+  border: none;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 12px;
+  font-size: 10px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.category-select:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-dim);
+}
+
+.category-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 #list {
   overflow-y: auto;
-  height: calc(100% - 34px - 30px);
-  padding: 6px;
+  height: calc(100% - 34px - 30px - 20px);
+  padding: 5px;
+}
+
+/* ---- Status bar ---- */
+
+#status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 20px;
+  padding: 0 8px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#status-bar span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#status-updated {
+  flex-shrink: 0;
+}
+
+#status-version {
+  flex-shrink: 0;
 }
 
 .row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  margin-bottom: 4px;
+  padding: 6px 8px;
+  margin-bottom: 3px;
   background: var(--bg-panel);
   border-radius: 8px;
   position: relative;
+  transition: background-color 0.15s ease;
+}
+
+.row:hover {
+  background: var(--bg-hover);
 }
 
 .row.dragging {
@@ -156,25 +242,17 @@ body {
   opacity: 1;
 }
 
-.section-header {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--text-muted);
-  padding: 6px 4px 4px;
-}
-
 .row-main {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
 }
 
 .row-label-line {
   display: flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
 }
 
 .star-btn {
@@ -186,6 +264,12 @@ body {
   padding: 0;
   line-height: 1;
   flex-shrink: 0;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.star-btn:hover {
+  color: #f2b807;
+  transform: scale(1.15);
 }
 
 .star-btn.active {
@@ -206,6 +290,17 @@ body {
   border-radius: 50%;
   background: var(--accent);
   flex-shrink: 0;
+  animation: alert-dot-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes alert-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
 }
 
 .row-category {
@@ -216,7 +311,7 @@ body {
 }
 
 .row-sparkline {
-  margin-top: 2px;
+  margin-top: 1px;
   line-height: 0;
 }
 
@@ -230,7 +325,24 @@ body {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 2px;
+  gap: 1px;
+}
+
+.row-price-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+
+.dir-arrow {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.dir-arrow svg {
+  display: block;
 }
 
 .row-price {
@@ -274,10 +386,15 @@ body {
   border-radius: 50%;
   background: var(--danger);
   color: #fff;
-  border: none;
+  border: 1.5px solid var(--bg);
   cursor: pointer;
   font-size: 11px;
   line-height: 1;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.remove-btn:hover {
+  transform: scale(1.1);
 }
 
 .detach-btn,
@@ -288,15 +405,22 @@ body {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--bg-hover);
+  background: var(--bg);
   color: var(--text-dim);
-  border: none;
+  border: 1.5px solid var(--bg-panel);
   cursor: pointer;
   font-size: 10px;
   line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: opacity 0.15s ease, color 0.15s ease, background-color 0.15s ease;
+}
+
+.detach-btn:hover,
+.chart-btn:hover {
+  color: var(--text);
+  background: var(--accent);
 }
 
 .detach-btn {
@@ -362,6 +486,7 @@ body {
   border-radius: 6px;
   padding: 6px 8px;
   font-size: 13px;
+  transition: border-color 0.15s ease;
 }
 
 #search-input:focus {
@@ -381,6 +506,7 @@ body {
   width: 26px;
   height: 26px;
   border-radius: 4px;
+  transition: background-color 0.15s ease;
 }
 
 #btn-refresh-news {
@@ -408,6 +534,7 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  transition: background-color 0.15s ease;
 }
 
 .result-row:hover {
@@ -484,6 +611,7 @@ body {
   border-radius: 8px;
   cursor: pointer;
   margin-bottom: 4px;
+  transition: background-color 0.15s ease;
 }
 
 .news-row:hover {
@@ -506,9 +634,18 @@ body {
   width: 8px;
 }
 
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 ::-webkit-scrollbar-thumb {
   background: var(--bg-hover);
   border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
 }
 
 /* ---- View modes (Liste / Kompakt / Izgara) ---- */
@@ -529,15 +666,15 @@ body {
 
 .view-grid #list {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
+  grid-template-columns: repeat(auto-fill, 120px);
+  gap: 5px;
   align-content: start;
 }
 
 .view-grid .row {
   flex-direction: column;
   align-items: flex-start;
-  gap: 4px;
+  gap: 3px;
 }
 
 .view-grid .row-right {
@@ -551,14 +688,211 @@ body {
   text-align: left;
 }
 
+.view-grid .row-price-line {
+  justify-content: flex-start;
+}
+
+.view-grid .row-label {
+  max-width: 90px;
+}
+
+.view-grid .row-category {
+  display: none;
+}
+
+.view-grid.grid-show-category .row-category {
+  display: block;
+}
+
+/* ---- Tablo (table) view ---- */
+
+.view-table .row {
+  flex-direction: row;
+  padding: 4px 8px;
+}
+
+.view-table .row-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.view-table .row-label-line {
+  min-width: 90px;
+}
+
+.view-table .row-category,
+.view-table .row-sparkline,
+.view-table .row-pl {
+  display: none;
+}
+
+.view-table .row-right {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.view-table .row-change {
+  min-width: 46px;
+}
+
+/* ---- Kayan Serit (ticker) ---- */
+/* Shared by the dedicated ticker window (ticker.html/ticker.ts); the main
+   window no longer renders the track inline, see #ticker-window below. */
+
+.ticker-track {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  white-space: nowrap;
+  animation: ticker-scroll 30s linear infinite;
+  padding: 0 8px;
+}
+
+.ticker-track:hover {
+  animation-play-state: paused;
+}
+
+@keyframes ticker-scroll {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 4px;
+  padding: 1px 4px;
+  transition: background-color 0.15s ease;
+}
+
+.ticker-item:hover {
+  background: var(--bg-hover);
+}
+
+.ticker-label {
+  font-weight: 500;
+}
+
+.ticker-price {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.ticker-change {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+
+/* ---- Dedicated Kayan Serit (ticker) window ---- */
+
+#ticker-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 16px;
+  padding: 0 6px;
+  background: var(--bg-panel);
+  -webkit-app-region: drag;
+  border-bottom: 1px solid var(--border);
+  font-size: 9px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+
+#btn-ticker-close {
+  -webkit-app-region: no-drag;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+#btn-ticker-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+#ticker-body {
+  /* No -webkit-app-region: drag here (see #mini-body for the same reasoning):
+     that region swallows right-click on Windows/Chromium. Drag via the
+     titlebar strip above instead. */
+  height: calc(100% - 16px);
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}
+
+/* ---- Isi Haritasi (heatmap) view ---- */
+
+.heat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+  gap: 4px;
+}
+
+.heat-tile {
+  border-radius: 8px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  cursor: pointer;
+  color: var(--text);
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.heat-tile:hover {
+  transform: scale(1.04);
+  filter: brightness(1.15);
+}
+
+.heat-label {
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.heat-price {
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.heat-change {
+  font-variant-numeric: tabular-nums;
+  font-size: 10px;
+}
+
 /* ---- Mini (detached single-item) window ---- */
 
 #mini-titlebar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 24px;
-  padding: 0 6px;
+  height: 22px;
+  padding: 0 5px;
   background: var(--bg-panel);
   -webkit-app-region: drag;
   border-bottom: 1px solid var(--border);
@@ -566,10 +900,24 @@ body {
   color: var(--text-dim);
 }
 
+.mini-icon {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.mini-icon svg {
+  display: block;
+}
+
 #mini-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  flex: 1;
+  min-width: 0;
 }
 
 #mini-titlebar-actions {
@@ -593,6 +941,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 #btn-attach:hover,
@@ -602,13 +951,26 @@ body {
 }
 
 #mini-body {
-  height: calc(100% - 24px);
+  /* No -webkit-app-region: drag here (unlike the titlebar): that region swallows
+     right-click on Windows/Chromium, which would break the context menu. The
+     window can still be dragged via the titlebar. */
+  height: calc(100% - 22px);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 2px;
+  padding: 4px 6px;
+}
+
+#mini-price-line {
+  display: flex;
+  align-items: center;
   gap: 4px;
-  -webkit-app-region: drag;
+}
+
+#mini-price-line .dir-arrow {
+  font-size: 11px;
 }
 
 #mini-price {
@@ -634,6 +996,43 @@ body.has-accent #btn-mini-chart {
 
 /* ---- History chart window ---- */
 
+#chart-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  height: 44px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#chart-summary .cs-price {
+  font-size: 19px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+#chart-summary .cs-change {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+#chart-summary .cs-change svg {
+  display: block;
+}
+
+#chart-summary .cs-range-label {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+  align-self: center;
+  white-space: nowrap;
+}
+
 #range-bar {
   display: flex;
   gap: 4px;
@@ -650,6 +1049,12 @@ body.has-accent #btn-mini-chart {
   border-radius: 6px;
   font-size: 11px;
   padding: 5px 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+#range-bar button:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text);
 }
 
 #range-bar button.active {
@@ -658,7 +1063,7 @@ body.has-accent #btn-mini-chart {
 }
 
 #chart-area {
-  height: calc(100% - 34px - 40px);
+  height: calc(100% - 34px - 44px - 40px);
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -680,12 +1085,83 @@ body.has-accent #btn-mini-chart {
 .chart-svg-wrap {
   flex: 1;
   min-height: 0;
+  position: relative;
+  cursor: crosshair;
 }
 
 .chart-svg {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.chart-svg .grid-line {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.chart-svg .crosshair-line {
+  stroke: var(--text-muted);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+  pointer-events: none;
+}
+
+.chart-svg .crosshair-dot {
+  pointer-events: none;
+}
+
+.chart-svg .measure-band {
+  fill: var(--accent);
+  opacity: 0.12;
+  pointer-events: none;
+}
+
+.chart-svg .measure-edge {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 3 2;
+  pointer-events: none;
+}
+
+.chart-tooltip,
+.chart-measure-badge {
+  position: absolute;
+  top: 4px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.25);
+}
+
+.chart-tooltip .tt-price,
+.chart-measure-badge .mb-pct {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.chart-measure-badge .mb-pct.up {
+  color: var(--up);
+}
+
+.chart-measure-badge .mb-pct.down {
+  color: var(--down);
+}
+
+.chart-measure-badge .mb-sub {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.hidden-overlay {
+  display: none;
 }
 
 .chart-range-labels {
@@ -695,25 +1171,69 @@ body.has-accent #btn-mini-chart {
   color: var(--text-muted);
 }
 
-/* ---- Settings window ---- */
+/* ---- Settings window (mega-menu) ---- */
 
-#settings-body {
-  overflow-y: auto;
+#settings-layout {
+  display: flex;
   height: calc(100% - 34px);
-  padding: 10px;
 }
 
-.settings-section {
-  margin-bottom: 18px;
+#settings-nav {
+  width: 108px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.settings-section h3 {
+.nav-item {
+  text-align: left;
+  padding: 8px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.nav-item:hover {
+  background: var(--bg-hover);
+}
+
+.nav-item.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+#settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 10px 14px;
+}
+
+.settings-panel {
+  display: none;
+}
+
+.settings-panel.active {
+  display: block;
+}
+
+.settings-panel h3 {
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
   margin: 0 0 8px;
   font-weight: 600;
+}
+
+.settings-panel h3.sub-heading {
+  margin-top: 16px;
 }
 
 .settings-hint {
@@ -748,6 +1268,57 @@ body.has-accent #btn-mini-chart {
   height: 16px;
 }
 
+.settings-row input[type='email'] {
+  width: 160px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+#feedback-message {
+  width: 100%;
+  resize: vertical;
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+
+#feedback-message:focus,
+.settings-row input[type='email']:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.opacity-control input[type='range'] {
+  width: 110px;
+  accent-color: var(--accent);
+}
+
+#opacity-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  color: var(--text-muted);
+  min-width: 32px;
+  text-align: right;
+}
+
 .view-mode-options {
   display: flex;
   gap: 6px;
@@ -763,6 +1334,12 @@ body.has-accent #btn-mini-chart {
   border-radius: 6px;
   cursor: pointer;
   font-size: 11px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.view-mode-options label:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .view-mode-options input {
@@ -806,6 +1383,12 @@ body.has-accent #btn-mini-chart {
   border-radius: 6px;
   font-size: 10px;
   padding: 4px 8px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.manage-actions button:hover:not(.active) {
+  background: var(--accent);
+  color: var(--on-accent);
 }
 
 .manage-actions button.active {
@@ -851,6 +1434,47 @@ body.has-accent #btn-mini-chart {
   font-size: 12px;
 }
 
+.alarm-group {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.alarm-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--accent);
+  margin-bottom: 2px;
+}
+
+.alarm-group-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.ratio-target-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.ratio-target-label select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+}
+
 .color-row {
   display: flex;
   align-items: center;
@@ -885,4 +1509,89 @@ body.has-accent #btn-mini-chart {
   color: var(--on-accent);
   cursor: pointer;
   font-size: 11px;
+  transition: filter 0.15s ease;
+}
+
+.save-detail:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+.save-detail:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.save-detail.danger-action {
+  background: var(--danger);
+}
+
+/* ---- Accent theme presets ---- */
+
+body.accent-gold {
+  --accent: #d4a017;
+}
+
+body.accent-green {
+  --accent: #2f9e5c;
+}
+
+body.accent-red {
+  --accent: #d6394a;
+}
+
+body.accent-purple {
+  --accent: #8a4fd6;
+}
+
+.accent-options {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.accent-swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.accent-swatch:hover {
+  transform: scale(1.1);
+}
+
+.accent-swatch.active {
+  border-color: var(--text);
+}
+
+.accent-swatch span {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: block;
+}
+
+.accent-swatch[data-accent='blue'] span {
+  background: #4a7dff;
+}
+
+.accent-swatch[data-accent='gold'] span {
+  background: #d4a017;
+}
+
+.accent-swatch[data-accent='green'] span {
+  background: #2f9e5c;
+}
+
+.accent-swatch[data-accent='red'] span {
+  background: #d6394a;
+}
+
+.accent-swatch[data-accent='purple'] span {
+  background: #8a4fd6;
 }

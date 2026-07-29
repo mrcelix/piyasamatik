@@ -1,6 +1,7 @@
 import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, globalShortcut, Notification, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
+import * as fs from 'fs';
 import { loadSettings, saveSettings, loadWatchlist, saveWatchlist, Settings, UpdateStatus } from './store';
 import {
   fetchQuotesForWatchlist,
@@ -14,6 +15,7 @@ import {
 } from './providers';
 import type { Quote, WatchlistItem } from './providers/types';
 import { registerForSnapping, clampToVisibleDisplay } from './windows';
+import { signInWithGoogle, signOut, getCurrentUser, cloudRowExists, pullFromCloud, pushToCloud, submitFeedback, type AuthUser } from './auth';
 import { randomUUID } from 'crypto';
 
 const ASSETS_DIR = path.join(__dirname, '..', '..', 'assets');
@@ -21,6 +23,8 @@ const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const APP_ICON = path.join(ASSETS_DIR, 'icon.png');
 const HOTKEY = 'CommandOrControl+Shift+M';
 const SPARKLINE_INTERVAL_MS = 10 * 60 * 1000;
+const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const UPDATE_AUTO_INSTALL_DELAY_MS = 60 * 1000;
 
 // Only one instance may own the userData files (watchlist.json/settings.json)
 // at a time; a second launch just focuses the existing window and exits.
@@ -31,15 +35,44 @@ if (!app.requestSingleInstanceLock()) {
 
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+let tickerWindow: BrowserWindow | null = null;
 const detachedWindows = new Map<string, BrowserWindow>();
 const chartWindows = new Map<string, BrowserWindow>();
 
 let tray: Tray | null = null;
 let refreshTimer: NodeJS.Timeout | null = null;
 let sparklineTimer: NodeJS.Timeout | null = null;
+let updateCheckTimer: NodeJS.Timeout | null = null;
+let updateAutoInstallTimer: NodeJS.Timeout | null = null;
 let latestQuotes = new Map<string, Quote>();
 let latestSparklines = new Map<string, number[]>();
-const alertState = new Map<string, { aboveFired: boolean; belowFired: boolean }>();
+const alertState = new Map<
+  string,
+  {
+    aboveFired: boolean;
+    belowFired: boolean;
+    upPctFired: boolean;
+    downPctFired: boolean;
+    ratioAboveFired: boolean;
+    ratioBelowFired: boolean;
+  }
+>();
+const globalAlertState = new Map<string, { upFired: boolean; downFired: boolean }>();
+
+let currentUser: AuthUser | null = null;
+let cloudPushTimer: NodeJS.Timeout | null = null;
+
+// The app was renamed from "Mini Takip" to "Piyasamatik", which moves Electron's
+// default userData folder (derived from productName). Copy any existing data over
+// once so returning users don't lose their watchlist/settings/auth session.
+function migrateUserDataFromOldProductName(): void {
+  const oldDir = path.join(app.getPath('appData'), 'Mini Takip');
+  const newDir = app.getPath('userData');
+  if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+    fs.cpSync(oldDir, newDir, { recursive: true });
+  }
+}
+migrateUserDataFromOldProductName();
 
 const settings: Settings = loadSettings();
 let watchlist: WatchlistItem[] = loadWatchlist();
@@ -55,6 +88,7 @@ const commonWebPreferences = {
 function broadcastQuotes() {
   const payload = Object.fromEntries(latestQuotes);
   mainWindow?.webContents.send('quotes-updated', payload);
+  tickerWindow?.webContents.send('quotes-updated', payload);
   for (const win of detachedWindows.values()) {
     win.webContents.send('quotes-updated', payload);
   }
@@ -63,11 +97,13 @@ function broadcastQuotes() {
 function broadcastWatchlist() {
   mainWindow?.webContents.send('watchlist-changed', watchlist);
   settingsWindow?.webContents.send('watchlist-changed', watchlist);
+  tickerWindow?.webContents.send('watchlist-changed', watchlist);
 }
 
 function broadcastSettings() {
   mainWindow?.webContents.send('settings-changed', settings);
   settingsWindow?.webContents.send('settings-changed', settings);
+  tickerWindow?.webContents.send('settings-changed', settings);
 }
 
 function broadcastDetachedIds() {
@@ -80,6 +116,22 @@ function broadcastDetachedIds() {
 function broadcastUpdateStatus(status: UpdateStatus) {
   mainWindow?.webContents.send('update-status', status);
   settingsWindow?.webContents.send('update-status', status);
+}
+
+function broadcastAuth() {
+  mainWindow?.webContents.send('auth-changed', currentUser);
+  settingsWindow?.webContents.send('auth-changed', currentUser);
+}
+
+// Cloud sync is opportunistic and best-effort: once signed in, local changes push
+// up (debounced) so a second device picks them up on its next pull.
+function scheduleCloudPush() {
+  if (!currentUser) return;
+  if (cloudPushTimer) clearTimeout(cloudPushTimer);
+  const userId = currentUser.id;
+  cloudPushTimer = setTimeout(() => {
+    pushToCloud(userId, settings, watchlist).catch((err) => console.error('cloud push failed', err));
+  }, 2000);
 }
 
 // ---- Main list window ----
@@ -99,12 +151,13 @@ function createMainWindow() {
     resizable: true,
     minWidth: 260,
     minHeight: 300,
-    alwaysOnTop: true,
-    skipTaskbar: true,
+    alwaysOnTop: settings.mainAlwaysOnTopEnabled,
+    skipTaskbar: false,
     show: false,
     icon: APP_ICON,
     webPreferences: commonWebPreferences,
   });
+  mainWindow.setOpacity(settings.transparentEnabled ? settings.windowOpacity : 1);
 
   mainWindow.loadFile(path.join(RENDERER_DIR, 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow?.show());
@@ -147,11 +200,12 @@ function createItemWindow(item: WatchlistItem) {
     resizable: true,
     minWidth: 160,
     minHeight: 64,
-    alwaysOnTop: true,
+    alwaysOnTop: settings.miniAlwaysOnTopEnabled,
     skipTaskbar: true,
     icon: APP_ICON,
     webPreferences: commonWebPreferences,
   });
+  win.setOpacity(settings.transparentEnabled ? settings.windowOpacity : 1);
 
   win.loadFile(path.join(RENDERER_DIR, 'mini.html'), { query: { itemId: item.id } });
   registerForSnapping(win, () => settings);
@@ -193,14 +247,17 @@ function createChartWindow(item: WatchlistItem) {
     return;
   }
 
+  const saved = clampToVisibleDisplay(settings.chartWindowBounds);
   const win = new BrowserWindow({
-    width: 460,
-    height: 360,
+    width: saved?.width ?? 460,
+    height: saved?.height ?? 360,
+    x: saved?.x,
+    y: saved?.y,
     frame: false,
     resizable: true,
     minWidth: 320,
     minHeight: 240,
-    alwaysOnTop: true,
+    alwaysOnTop: settings.miniAlwaysOnTopEnabled,
     skipTaskbar: true,
     icon: APP_ICON,
     webPreferences: commonWebPreferences,
@@ -208,6 +265,13 @@ function createChartWindow(item: WatchlistItem) {
 
   win.loadFile(path.join(RENDERER_DIR, 'chart.html'), { query: { itemId: item.id } });
   registerForSnapping(win, () => settings);
+
+  const persistBounds = () => {
+    settings.chartWindowBounds = win.getBounds();
+    saveSettings(settings);
+  };
+  win.on('move', persistBounds);
+  win.on('resize', persistBounds);
 
   win.on('closed', () => {
     chartWindows.delete(item.id);
@@ -218,6 +282,69 @@ function createChartWindow(item: WatchlistItem) {
 
 function closeChartWindow(id: string) {
   chartWindows.get(id)?.close();
+}
+
+// ---- Kayan Serit (ticker) window ----
+// The ticker view mode gets its own slim, always-on-top window (rather than
+// rendering inline in the main list) so it can sit at a screen edge like a
+// classic stock ticker bar while the main window stays free for other views.
+
+function createTickerWindow() {
+  if (tickerWindow) {
+    tickerWindow.focus();
+    return;
+  }
+  const saved = clampToVisibleDisplay(settings.tickerWindowBounds);
+  tickerWindow = new BrowserWindow({
+    width: saved?.width ?? 480,
+    height: saved?.height ?? 40,
+    x: saved?.x,
+    y: saved?.y,
+    frame: false,
+    resizable: true,
+    minWidth: 220,
+    minHeight: 32,
+    alwaysOnTop: settings.miniAlwaysOnTopEnabled,
+    skipTaskbar: true,
+    icon: APP_ICON,
+    webPreferences: commonWebPreferences,
+  });
+  tickerWindow.setOpacity(settings.transparentEnabled ? settings.windowOpacity : 1);
+
+  tickerWindow.loadFile(path.join(RENDERER_DIR, 'ticker.html'));
+  registerForSnapping(tickerWindow, () => settings);
+
+  const persistBounds = () => {
+    if (!tickerWindow) return;
+    settings.tickerWindowBounds = tickerWindow.getBounds();
+    saveSettings(settings);
+  };
+  tickerWindow.on('move', persistBounds);
+  tickerWindow.on('resize', persistBounds);
+
+  tickerWindow.webContents.once('did-finish-load', () => {
+    tickerWindow?.webContents.send('quotes-updated', Object.fromEntries(latestQuotes));
+  });
+
+  tickerWindow.on('closed', () => {
+    tickerWindow = null;
+    // Nothing left to show the ticker view in, so fall back to grid rather
+    // than leaving viewMode stuck on 'ticker' with no window displaying it.
+    if (settings.viewMode === 'ticker') {
+      settings.viewMode = 'grid';
+      saveSettings(settings);
+      broadcastSettings();
+    }
+  });
+}
+
+function closeTickerWindow() {
+  tickerWindow?.close();
+}
+
+function syncTickerWindow() {
+  if (settings.viewMode === 'ticker') createTickerWindow();
+  else closeTickerWindow();
 }
 
 function reopenPersistedDetachedWindows() {
@@ -231,22 +358,39 @@ function reopenPersistedDetachedWindows() {
 
 // ---- Settings window ----
 
-function createSettingsWindow() {
+function createSettingsWindow(focusItemId?: string) {
   if (settingsWindow) {
     settingsWindow.focus();
+    if (focusItemId) settingsWindow.webContents.send('focus-item', focusItemId);
     return;
   }
+  const saved = clampToVisibleDisplay(settings.settingsWindowBounds);
   settingsWindow = new BrowserWindow({
-    width: 380,
-    height: 560,
+    width: saved?.width ?? 480,
+    height: saved?.height ?? 580,
+    x: saved?.x,
+    y: saved?.y,
     frame: false,
     resizable: true,
-    minWidth: 320,
-    minHeight: 400,
+    minWidth: 420,
+    minHeight: 420,
     icon: APP_ICON,
     webPreferences: commonWebPreferences,
   });
-  settingsWindow.loadFile(path.join(RENDERER_DIR, 'settings.html'));
+  settingsWindow.loadFile(
+    path.join(RENDERER_DIR, 'settings.html'),
+    focusItemId ? { query: { focusItemId } } : undefined
+  );
+  registerForSnapping(settingsWindow, () => settings);
+
+  const persistBounds = () => {
+    if (!settingsWindow) return;
+    settings.settingsWindowBounds = settingsWindow.getBounds();
+    saveSettings(settings);
+  };
+  settingsWindow.on('move', persistBounds);
+  settingsWindow.on('resize', persistBounds);
+
   settingsWindow.on('closed', () => {
     settingsWindow = null;
   });
@@ -257,7 +401,7 @@ function createSettingsWindow() {
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(ASSETS_DIR, 'tray.png'));
   tray = new Tray(icon);
-  tray.setToolTip('Mini Takip');
+  tray.setToolTip('Piyasamatik');
   const menu = Menu.buildFromTemplate([
     { label: 'Goster/Gizle', click: () => toggleWindow() },
     { label: 'Ayarlar', click: () => createSettingsWindow() },
@@ -278,6 +422,122 @@ function toggleWindow() {
   }
 }
 
+function applyTrayVisibility() {
+  if (settings.showTrayIcon && !tray) {
+    createTray();
+  } else if (!settings.showTrayIcon && tray) {
+    tray.destroy();
+    tray = null;
+  }
+}
+
+function applyAlwaysOnTop() {
+  mainWindow?.setAlwaysOnTop(settings.mainAlwaysOnTopEnabled);
+  tickerWindow?.setAlwaysOnTop(settings.miniAlwaysOnTopEnabled);
+  for (const win of detachedWindows.values()) win.setAlwaysOnTop(settings.miniAlwaysOnTopEnabled);
+  for (const win of chartWindows.values()) win.setAlwaysOnTop(settings.miniAlwaysOnTopEnabled);
+}
+
+function applyTransparency() {
+  const opacity = settings.transparentEnabled ? settings.windowOpacity : 1;
+  mainWindow?.setOpacity(opacity);
+  tickerWindow?.setOpacity(opacity);
+  for (const win of detachedWindows.values()) win.setOpacity(opacity);
+  for (const win of chartWindows.values()) win.setOpacity(opacity);
+}
+
+// ---- Right-click context menus ----
+
+function findDetachedItemId(win: BrowserWindow): string | null {
+  for (const [id, w] of detachedWindows) if (w === win) return id;
+  return null;
+}
+
+function findChartItemId(win: BrowserWindow): string | null {
+  for (const [id, w] of chartWindows) if (w === win) return id;
+  return null;
+}
+
+function buildContextMenu(win: BrowserWindow): Menu {
+  if (win === mainWindow) {
+    return Menu.buildFromTemplate([
+      { label: 'Simdi Yenile', click: () => refreshQuotes() },
+      { label: 'Oge Ekle', click: () => mainWindow?.webContents.send('menu-action', 'open-add') },
+      { label: 'Kur Cevirici', click: () => mainWindow?.webContents.send('menu-action', 'open-convert') },
+      { label: 'Piyasa Haberleri', click: () => mainWindow?.webContents.send('menu-action', 'open-news') },
+      { type: 'separator' },
+      {
+        label: 'Miknatis',
+        type: 'checkbox',
+        checked: settings.magnetEnabled,
+        click: () => {
+          settings.magnetEnabled = !settings.magnetEnabled;
+          saveSettings(settings);
+          broadcastSettings();
+        },
+      },
+      {
+        label: 'Otomatik Sigdir',
+        type: 'checkbox',
+        checked: settings.autofitEnabled,
+        click: () => {
+          settings.autofitEnabled = !settings.autofitEnabled;
+          saveSettings(settings);
+          broadcastSettings();
+        },
+      },
+      {
+        label: 'Her Zaman Ustte',
+        type: 'checkbox',
+        checked: settings.mainAlwaysOnTopEnabled,
+        click: () => {
+          settings.mainAlwaysOnTopEnabled = !settings.mainAlwaysOnTopEnabled;
+          saveSettings(settings);
+          applyAlwaysOnTop();
+          broadcastSettings();
+        },
+      },
+      { label: 'Ayarlar', click: () => createSettingsWindow() },
+      { type: 'separator' },
+      { label: 'Pencereyi Gizle', click: () => mainWindow?.hide() },
+      { label: 'Cikis', click: () => app.quit() },
+    ]);
+  }
+
+  const detachedId = findDetachedItemId(win);
+  if (detachedId) {
+    const item = watchlist.find((i) => i.id === detachedId);
+    return Menu.buildFromTemplate([
+      { label: 'Gecmis Grafik', click: () => item && createChartWindow(item) },
+      {
+        label: 'Her Zaman Ustte',
+        type: 'checkbox',
+        checked: settings.miniAlwaysOnTopEnabled,
+        click: () => {
+          settings.miniAlwaysOnTopEnabled = !settings.miniAlwaysOnTopEnabled;
+          saveSettings(settings);
+          applyAlwaysOnTop();
+          broadcastSettings();
+        },
+      },
+      { label: 'Listeye Don', click: () => closeItemWindow(detachedId) },
+    ]);
+  }
+
+  if (findChartItemId(win)) {
+    return Menu.buildFromTemplate([{ label: 'Kapat', click: () => win.close() }]);
+  }
+
+  if (win === tickerWindow) {
+    return Menu.buildFromTemplate([
+      { label: 'Simdi Yenile', click: () => refreshQuotes() },
+      { label: 'Listeye Don', click: () => closeTickerWindow() },
+    ]);
+  }
+
+  return Menu.buildFromTemplate([{ label: 'Kapat', click: () => win.close() }]);
+}
+
 // ---- Price target alerts ----
 
 function fireAlertNotification(item: WatchlistItem, body: string) {
@@ -294,30 +554,121 @@ function fireAlertNotification(item: WatchlistItem, body: string) {
   notif.show();
 }
 
+function formatAlertPct(v: number): string {
+  return `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
+}
+
 function checkAlerts() {
   for (const item of watchlist) {
-    if (item.alertAbove == null && item.alertBelow == null) continue;
     const quote = latestQuotes.get(item.id);
     if (!quote || quote.error) continue;
-    const state = alertState.get(item.id) ?? { aboveFired: false, belowFired: false };
 
-    if (item.alertAbove != null) {
-      if (quote.price >= item.alertAbove && !state.aboveFired) {
-        state.aboveFired = true;
-        fireAlertNotification(item, `${quote.price} ${quote.currency} (hedef: ${item.alertAbove} uzeri)`);
-      } else if (quote.price < item.alertAbove) {
-        state.aboveFired = false;
+    const hasPerItemAlert =
+      item.alertAbove != null ||
+      item.alertBelow != null ||
+      item.alertUpPercent != null ||
+      item.alertDownPercent != null ||
+      (item.alertRatioTargetId != null && (item.alertRatioAbove != null || item.alertRatioBelow != null));
+    if (hasPerItemAlert) {
+      const state =
+        alertState.get(item.id) ??
+        {
+          aboveFired: false,
+          belowFired: false,
+          upPctFired: false,
+          downPctFired: false,
+          ratioAboveFired: false,
+          ratioBelowFired: false,
+        };
+
+      if (item.alertAbove != null) {
+        if (quote.price >= item.alertAbove && !state.aboveFired) {
+          state.aboveFired = true;
+          fireAlertNotification(item, `${quote.price} ${quote.currency} (hedef: ${item.alertAbove} uzeri)`);
+        } else if (quote.price < item.alertAbove) {
+          state.aboveFired = false;
+        }
       }
-    }
-    if (item.alertBelow != null) {
-      if (quote.price <= item.alertBelow && !state.belowFired) {
-        state.belowFired = true;
-        fireAlertNotification(item, `${quote.price} ${quote.currency} (hedef: ${item.alertBelow} alti)`);
-      } else if (quote.price > item.alertBelow) {
-        state.belowFired = false;
+      if (item.alertBelow != null) {
+        if (quote.price <= item.alertBelow && !state.belowFired) {
+          state.belowFired = true;
+          fireAlertNotification(item, `${quote.price} ${quote.currency} (hedef: ${item.alertBelow} alti)`);
+        } else if (quote.price > item.alertBelow) {
+          state.belowFired = false;
+        }
       }
+      if (item.alertUpPercent != null && quote.changePercent != null) {
+        if (quote.changePercent >= item.alertUpPercent && !state.upPctFired) {
+          state.upPctFired = true;
+          fireAlertNotification(item, `${formatAlertPct(quote.changePercent)} degisim (hedef: +%${item.alertUpPercent} artis)`);
+        } else if (quote.changePercent < item.alertUpPercent) {
+          state.upPctFired = false;
+        }
+      }
+      if (item.alertDownPercent != null && quote.changePercent != null) {
+        if (quote.changePercent <= -item.alertDownPercent && !state.downPctFired) {
+          state.downPctFired = true;
+          fireAlertNotification(item, `${formatAlertPct(quote.changePercent)} degisim (hedef: -%${item.alertDownPercent} azalis)`);
+        } else if (quote.changePercent > -item.alertDownPercent) {
+          state.downPctFired = false;
+        }
+      }
+      if (item.alertRatioTargetId != null) {
+        const targetItem = watchlist.find((i) => i.id === item.alertRatioTargetId);
+        const targetQuote = latestQuotes.get(item.alertRatioTargetId);
+        if (targetItem && targetQuote && !targetQuote.error && targetQuote.price !== 0) {
+          const ratio = quote.price / targetQuote.price;
+          if (item.alertRatioAbove != null) {
+            if (ratio >= item.alertRatioAbove && !state.ratioAboveFired) {
+              state.ratioAboveFired = true;
+              fireAlertNotification(
+                item,
+                `Oran ${ratio.toFixed(4)} (hedef: ${item.label}/${targetItem.label} orani ${item.alertRatioAbove} uzeri)`
+              );
+            } else if (ratio < item.alertRatioAbove) {
+              state.ratioAboveFired = false;
+            }
+          }
+          if (item.alertRatioBelow != null) {
+            if (ratio <= item.alertRatioBelow && !state.ratioBelowFired) {
+              state.ratioBelowFired = true;
+              fireAlertNotification(
+                item,
+                `Oran ${ratio.toFixed(4)} (hedef: ${item.label}/${targetItem.label} orani ${item.alertRatioBelow} alti)`
+              );
+            } else if (ratio > item.alertRatioBelow) {
+              state.ratioBelowFired = false;
+            }
+          }
+        }
+      }
+      alertState.set(item.id, state);
     }
-    alertState.set(item.id, state);
+
+    // Global rule: a single up/down percent threshold applied to every item,
+    // independent of and in addition to any per-item alarms above.
+    if (settings.globalAlert.enabled && quote.changePercent != null) {
+      const gstate = globalAlertState.get(item.id) ?? { upFired: false, downFired: false };
+      const { upPercent, downPercent } = settings.globalAlert;
+
+      if (upPercent != null) {
+        if (quote.changePercent >= upPercent && !gstate.upFired) {
+          gstate.upFired = true;
+          fireAlertNotification(item, `Genel alarm: ${formatAlertPct(quote.changePercent)} (esik: +%${upPercent})`);
+        } else if (quote.changePercent < upPercent) {
+          gstate.upFired = false;
+        }
+      }
+      if (downPercent != null) {
+        if (quote.changePercent <= -downPercent && !gstate.downFired) {
+          gstate.downFired = true;
+          fireAlertNotification(item, `Genel alarm: ${formatAlertPct(quote.changePercent)} (esik: -%${downPercent})`);
+        } else if (quote.changePercent > -downPercent) {
+          gstate.downFired = false;
+        }
+      }
+      globalAlertState.set(item.id, gstate);
+    }
   }
 }
 
@@ -335,7 +686,7 @@ async function refreshQuotes() {
 
 function startRefreshLoop() {
   if (refreshTimer) clearInterval(refreshTimer);
-  refreshTimer = setInterval(refreshQuotes, Math.max(15, settings.refreshIntervalSec) * 1000);
+  refreshTimer = setInterval(refreshQuotes, Math.max(5, settings.refreshIntervalSec) * 1000);
 }
 
 async function refreshSparklines() {
@@ -363,8 +714,21 @@ function registerHotkey() {
 
 // ---- Auto-update (GitHub Releases via electron-builder/electron-updater) ----
 
+function installUpdateNow() {
+  if (updateAutoInstallTimer) {
+    clearTimeout(updateAutoInstallTimer);
+    updateAutoInstallTimer = null;
+  }
+  autoUpdater.quitAndInstall();
+}
+
 function setupAutoUpdater() {
   autoUpdater.autoDownload = false;
+  // We handle installing ourselves (notify + short grace period, see below)
+  // rather than the default "install silently on next quit" behavior, so a
+  // long-running tray session actually gets updated without the user having
+  // to know to quit the app first.
+  autoUpdater.autoInstallOnAppQuit = false;
   autoUpdater.on('checking-for-update', () => broadcastUpdateStatus({ state: 'checking' }));
   autoUpdater.on('update-available', (info) => {
     broadcastUpdateStatus({ state: 'available', version: info.version });
@@ -372,7 +736,22 @@ function setupAutoUpdater() {
   });
   autoUpdater.on('update-not-available', () => broadcastUpdateStatus({ state: 'not-available' }));
   autoUpdater.on('download-progress', (p) => broadcastUpdateStatus({ state: 'downloading', percent: p.percent }));
-  autoUpdater.on('update-downloaded', (info) => broadcastUpdateStatus({ state: 'downloaded', version: info.version }));
+  autoUpdater.on('update-downloaded', (info) => {
+    broadcastUpdateStatus({ state: 'downloaded', version: info.version });
+
+    if (Notification.isSupported()) {
+      const notif = new Notification({
+        title: 'Guncelleme hazir',
+        body: `Piyasamatik ${info.version} indirildi. 60 saniye icinde otomatik olarak yuklenip yeniden baslatilacak. Hemen yuklemek icin tiklayin.`,
+        icon: APP_ICON,
+      });
+      notif.on('click', () => installUpdateNow());
+      notif.show();
+    }
+
+    if (updateAutoInstallTimer) clearTimeout(updateAutoInstallTimer);
+    updateAutoInstallTimer = setTimeout(installUpdateNow, UPDATE_AUTO_INSTALL_DELAY_MS);
+  });
   autoUpdater.on('error', (err) => broadcastUpdateStatus({ state: 'error', message: err.message }));
 }
 
@@ -391,10 +770,29 @@ async function checkForUpdates() {
   }
 }
 
-app.whenReady().then(() => {
+function startUpdateCheckLoop() {
+  if (updateCheckTimer) clearInterval(updateCheckTimer);
+  updateCheckTimer = setInterval(checkForUpdates, UPDATE_CHECK_INTERVAL_MS);
+}
+
+app.whenReady().then(async () => {
+  // Restore any signed-in session and pull cloud data before the first render,
+  // so a returning user sees their synced watchlist/settings immediately.
+  currentUser = await getCurrentUser();
+  if (currentUser) {
+    const cloud = await pullFromCloud(currentUser.id);
+    if (cloud) {
+      Object.assign(settings, cloud.settings);
+      watchlist = cloud.watchlist;
+      saveSettings(settings);
+      saveWatchlist(watchlist);
+    }
+  }
+
   createMainWindow();
-  createTray();
+  applyTrayVisibility();
   reopenPersistedDetachedWindows();
+  syncTickerWindow();
   refreshQuotes();
   startRefreshLoop();
   refreshSparklines();
@@ -403,6 +801,7 @@ app.whenReady().then(() => {
   app.setLoginItemSettings({ openAtLogin: settings.launchAtStartup });
   setupAutoUpdater();
   checkForUpdates();
+  startUpdateCheckLoop();
 });
 
 app.on('window-all-closed', () => {
@@ -429,18 +828,24 @@ ipcMain.handle('watchlist:add', (_e, item: Omit<WatchlistItem, 'id'>) => {
   watchlist.push(newItem);
   saveWatchlist(watchlist);
   broadcastWatchlist();
+  scheduleCloudPush();
   refreshQuotes();
   refreshSparklines();
   return watchlist;
 });
 
 ipcMain.handle('watchlist:remove', (_e, id: string) => {
-  watchlist = watchlist.filter((i) => i.id !== id);
+  watchlist = watchlist
+    .filter((i) => i.id !== id)
+    // Drop any dangling ratio-alarm reference some other item had pointing at the removed item.
+    .map((i) => (i.alertRatioTargetId === id ? { ...i, alertRatioTargetId: undefined } : i));
   saveWatchlist(watchlist);
   closeItemWindow(id);
   closeChartWindow(id);
   alertState.delete(id);
+  globalAlertState.delete(id);
   broadcastWatchlist();
+  scheduleCloudPush();
   return watchlist;
 });
 
@@ -448,6 +853,7 @@ ipcMain.handle('watchlist:update', (_e, id: string, patch: Partial<WatchlistItem
   watchlist = watchlist.map((i) => (i.id === id ? { ...i, ...patch } : i));
   saveWatchlist(watchlist);
   broadcastWatchlist();
+  scheduleCloudPush();
   return watchlist;
 });
 
@@ -456,6 +862,7 @@ ipcMain.handle('watchlist:reorder', (_e, orderedIds: string[]) => {
   watchlist = orderedIds.map((id) => byId.get(id)).filter(Boolean) as WatchlistItem[];
   saveWatchlist(watchlist);
   broadcastWatchlist();
+  scheduleCloudPush();
   return watchlist;
 });
 
@@ -485,7 +892,16 @@ ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
     app.setLoginItemSettings({ openAtLogin: patch.launchAtStartup });
   }
   if (typeof patch.hotkeyEnabled === 'boolean') registerHotkey();
+  if (typeof patch.showTrayIcon === 'boolean') applyTrayVisibility();
+  if (typeof patch.mainAlwaysOnTopEnabled === 'boolean' || typeof patch.miniAlwaysOnTopEnabled === 'boolean') {
+    applyAlwaysOnTop();
+  }
+  if (typeof patch.transparentEnabled === 'boolean' || typeof patch.windowOpacity === 'number') {
+    applyTransparency();
+  }
+  if (patch.viewMode) syncTickerWindow();
   broadcastSettings();
+  scheduleCloudPush();
   return settings;
 });
 
@@ -517,13 +933,70 @@ ipcMain.handle('news:get', async (_e, force: boolean) => fetchMarketNews(force))
 ipcMain.handle('news:open-link', (_e, url: string) => shell.openExternal(url));
 
 ipcMain.handle('update:check', () => checkForUpdates());
-ipcMain.handle('update:install', () => autoUpdater.quitAndInstall());
+ipcMain.handle('update:install', () => installUpdateNow());
 ipcMain.handle('update:get-version', () => app.getVersion());
 
-ipcMain.handle('window:open-settings', () => createSettingsWindow());
+ipcMain.handle('auth:get-user', () => currentUser);
+
+ipcMain.handle('auth:sign-in-google', async () => {
+  const result = await signInWithGoogle();
+  if (!result.user) return { error: result.error };
+
+  currentUser = result.user;
+  try {
+    const exists = await cloudRowExists(currentUser.id);
+    if (exists) {
+      const cloud = await pullFromCloud(currentUser.id);
+      if (cloud) {
+        Object.assign(settings, cloud.settings);
+        watchlist = cloud.watchlist;
+        saveSettings(settings);
+        saveWatchlist(watchlist);
+        broadcastSettings();
+        broadcastWatchlist();
+        refreshQuotes();
+        refreshSparklines();
+      }
+    } else {
+      await pushToCloud(currentUser.id, settings, watchlist);
+    }
+  } catch (err) {
+    console.error('post-login cloud sync failed', err);
+  }
+  broadcastAuth();
+  return { user: currentUser };
+});
+
+ipcMain.handle('auth:sign-out', async () => {
+  await signOut();
+  currentUser = null;
+  if (cloudPushTimer) clearTimeout(cloudPushTimer);
+  broadcastAuth();
+});
+
+ipcMain.handle('feedback:submit', (_e, message: string, email?: string) => submitFeedback(message, email));
+
+ipcMain.handle('window:open-settings', (_e, focusItemId?: string) => createSettingsWindow(focusItemId));
 ipcMain.handle('window:hide', () => mainWindow?.hide());
 ipcMain.handle('window:minimize', () => mainWindow?.minimize());
 ipcMain.handle('window:quit', () => app.quit());
 ipcMain.handle('window:close-self', (e) => {
   BrowserWindow.fromWebContents(e.sender)?.close();
+});
+
+ipcMain.handle('window:context-menu', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  buildContextMenu(win).popup({ window: win });
+});
+
+ipcMain.handle('window:request-autofit', (e, width: number, height: number) => {
+  if (!settings.autofitEnabled) return;
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return;
+  const [minW, minH] = win.getMinimumSize();
+  const maxHeight = screen.getPrimaryDisplay().workAreaSize.height - 40;
+  const clampedWidth = Math.max(minW, Math.round(width));
+  const clampedHeight = Math.max(minH, Math.min(maxHeight, Math.round(height)));
+  win.setContentSize(clampedWidth, clampedHeight);
 });

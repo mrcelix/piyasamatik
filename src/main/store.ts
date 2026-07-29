@@ -3,8 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import type { WatchlistItem } from './providers/types';
 
-export type ViewMode = 'list' | 'compact' | 'grid';
+export type ViewMode = 'list' | 'compact' | 'grid' | 'table' | 'ticker' | 'heatmap';
 export type ThemeMode = 'dark' | 'light';
+export type AccentTheme = 'blue' | 'gold' | 'green' | 'red' | 'purple';
 
 export interface UpdateStatus {
   state: 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
@@ -20,6 +21,14 @@ export interface WindowRect {
   height: number;
 }
 
+// A single daily percent-change rule applied to every watchlist item at once,
+// independent of any per-item price/percent alarms set via "Detay".
+export interface GlobalAlertSettings {
+  enabled: boolean;
+  upPercent?: number;
+  downPercent?: number;
+}
+
 export interface Settings {
   refreshIntervalSec: number;
   launchAtStartup: boolean;
@@ -28,19 +37,43 @@ export interface Settings {
   themeMode: ThemeMode;
   magnetEnabled: boolean;
   hotkeyEnabled: boolean;
+  mainAlwaysOnTopEnabled: boolean;
+  miniAlwaysOnTopEnabled: boolean;
+  showTrayIcon: boolean;
+  transparentEnabled: boolean;
+  // 0.4-1: fraction of full opacity applied when transparentEnabled is on.
+  windowOpacity: number;
+  accentTheme: AccentTheme;
+  autofitEnabled: boolean;
+  gridShowCategory: boolean;
+  globalAlert: GlobalAlertSettings;
   // Presence of a key means that item's mini window should be open;
   // the value remembers its last position/size across restarts.
   detachedWindows: Record<string, WindowRect>;
+  settingsWindowBounds?: WindowRect;
+  chartWindowBounds?: WindowRect;
+  tickerWindowBounds?: WindowRect;
 }
 
 const DEFAULT_SETTINGS: Settings = {
-  refreshIntervalSec: 60,
+  refreshIntervalSec: 30,
   launchAtStartup: false,
-  windowBounds: { width: 340, height: 520 },
-  viewMode: 'list',
+  // Wide enough for exactly 3 fixed 120px grid cards side by side (3*120 + 2*5
+  // gaps + 10 #list padding = 380), plus a small buffer.
+  windowBounds: { width: 390, height: 520 },
+  viewMode: 'grid',
   themeMode: 'dark',
   magnetEnabled: true,
   hotkeyEnabled: true,
+  mainAlwaysOnTopEnabled: true,
+  miniAlwaysOnTopEnabled: true,
+  showTrayIcon: true,
+  transparentEnabled: false,
+  windowOpacity: 0.88,
+  accentTheme: 'blue',
+  autofitEnabled: true,
+  gridShowCategory: false,
+  globalAlert: { enabled: false },
   detachedWindows: {},
 };
 
