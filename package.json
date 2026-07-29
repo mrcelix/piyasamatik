@@ -41,7 +41,8 @@
     "publish": {
       "provider": "github",
       "owner": "mrcelix",
-      "repo": "piyasamatik"
+      "repo": "piyasamatik",
+      "releaseType": "release"
     }
   },
   "allowScripts": {
