@@ -22,7 +22,7 @@ export interface WindowRect {
 }
 
 // A single daily percent-change rule applied to every watchlist item at once,
-// independent of any per-item price/percent alarms set via "Detay".
+// independent of any per-item price/percent alarms set via "Alarm".
 export interface GlobalAlertSettings {
   enabled: boolean;
   upPercent?: number;
@@ -37,9 +37,11 @@ export interface Settings {
   themeMode: ThemeMode;
   magnetEnabled: boolean;
   hotkeyEnabled: boolean;
+  hudHotkeyEnabled: boolean;
   mainAlwaysOnTopEnabled: boolean;
   miniAlwaysOnTopEnabled: boolean;
   showTrayIcon: boolean;
+  trayMoodEnabled: boolean;
   transparentEnabled: boolean;
   // 0.4-1: fraction of full opacity applied when transparentEnabled is on.
   windowOpacity: number;
@@ -65,9 +67,11 @@ const DEFAULT_SETTINGS: Settings = {
   themeMode: 'dark',
   magnetEnabled: true,
   hotkeyEnabled: true,
+  hudHotkeyEnabled: true,
   mainAlwaysOnTopEnabled: true,
   miniAlwaysOnTopEnabled: true,
   showTrayIcon: true,
+  trayMoodEnabled: true,
   transparentEnabled: false,
   windowOpacity: 0.88,
   accentTheme: 'blue',

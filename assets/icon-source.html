@@ -37,6 +37,12 @@
 </style>
 </head>
 <body>
-  <div class="icon-box"><span class="dollar">$</span></div>
+  <div class="icon-box"><span class="dollar" id="dollar">$</span></div>
+  <script>
+    // ?color=RRGGBB overrides the dollar sign color, used to generate the
+    // green/red "mood" tray icon variants without duplicating this markup.
+    const color = new URLSearchParams(location.search).get('color');
+    if (color) document.getElementById('dollar').style.color = '#' + color;
+  </script>
 </body>
 </html>

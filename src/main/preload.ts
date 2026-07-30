@@ -40,6 +40,14 @@ const api = {
     ipcRenderer.on('focus-item', (_e, id) => cb(id));
   },
   hideWindow: (): void => void ipcRenderer.invoke('window:hide'),
+  setDeclutterMode: (enabled: boolean): void => void ipcRenderer.invoke('window:set-declutter', enabled),
+  onExitDeclutterMode: (cb: () => void) => {
+    ipcRenderer.on('exit-declutter-mode', () => cb());
+  },
+  setWindowsLocked: (locked: boolean): void => void ipcRenderer.invoke('window:set-windows-locked', locked),
+  onWindowsLockChanged: (cb: (locked: boolean) => void) => {
+    ipcRenderer.on('windows-lock-changed', (_e, locked) => cb(locked));
+  },
   minimizeWindow: (): void => void ipcRenderer.invoke('window:minimize'),
   quit: (): void => void ipcRenderer.invoke('window:quit'),
   closeSelf: (): void => void ipcRenderer.invoke('window:close-self'),

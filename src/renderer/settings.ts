@@ -17,7 +17,9 @@ let expandedId: string | null = null;
 const inputRefresh = document.getElementById('input-refresh') as HTMLInputElement;
 const inputStartup = document.getElementById('input-startup') as HTMLInputElement;
 const inputTray = document.getElementById('input-tray') as HTMLInputElement;
+const inputTrayMood = document.getElementById('input-tray-mood') as HTMLInputElement;
 const inputHotkey = document.getElementById('input-hotkey') as HTMLInputElement;
+const inputHudHotkey = document.getElementById('input-hud-hotkey') as HTMLInputElement;
 const inputAlwaysOnTopMain = document.getElementById('input-alwaysontop-main') as HTMLInputElement;
 const inputAlwaysOnTopMini = document.getElementById('input-alwaysontop-mini') as HTMLInputElement;
 const inputMagnet = document.getElementById('input-magnet') as HTMLInputElement;
@@ -125,7 +127,9 @@ function renderGeneral(settings: Settings) {
   inputRefresh.value = String(settings.refreshIntervalSec);
   inputStartup.checked = settings.launchAtStartup;
   inputTray.checked = settings.showTrayIcon;
+  inputTrayMood.checked = settings.trayMoodEnabled;
   inputHotkey.checked = settings.hotkeyEnabled;
+  inputHudHotkey.checked = settings.hudHotkeyEnabled;
   inputAlwaysOnTopMain.checked = settings.mainAlwaysOnTopEnabled;
   inputAlwaysOnTopMini.checked = settings.miniAlwaysOnTopEnabled;
   inputMagnet.checked = settings.magnetEnabled;
@@ -396,7 +400,7 @@ function renderWatchlistManage() {
     });
 
     const detailBtn = document.createElement('button');
-    detailBtn.textContent = 'Detay';
+    detailBtn.textContent = 'Alarm';
     detailBtn.className = expandedId === item.id ? 'active' : '';
     detailBtn.addEventListener('click', () => {
       expandedId = expandedId === item.id ? null : item.id;
@@ -453,12 +457,20 @@ inputTray.addEventListener('change', () => {
   window.miniTakip.setSettings({ showTrayIcon: inputTray.checked });
 });
 
+inputTrayMood.addEventListener('change', () => {
+  window.miniTakip.setSettings({ trayMoodEnabled: inputTrayMood.checked });
+});
+
 inputMagnet.addEventListener('change', () => {
   window.miniTakip.setSettings({ magnetEnabled: inputMagnet.checked });
 });
 
 inputHotkey.addEventListener('change', () => {
   window.miniTakip.setSettings({ hotkeyEnabled: inputHotkey.checked });
+});
+
+inputHudHotkey.addEventListener('change', () => {
+  window.miniTakip.setSettings({ hudHotkeyEnabled: inputHudHotkey.checked });
 });
 
 inputAlwaysOnTopMain.addEventListener('change', () => {

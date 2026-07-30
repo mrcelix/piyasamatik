@@ -1,4 +1,16 @@
-import { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, globalShortcut, Notification, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  Tray,
+  Menu,
+  MenuItemConstructorOptions,
+  ipcMain,
+  nativeImage,
+  screen,
+  globalShortcut,
+  Notification,
+  shell,
+} from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -22,6 +34,10 @@ const ASSETS_DIR = path.join(__dirname, '..', '..', 'assets');
 const RENDERER_DIR = path.join(__dirname, '..', 'renderer');
 const APP_ICON = path.join(ASSETS_DIR, 'icon.png');
 const HOTKEY = 'CommandOrControl+Shift+M';
+const HUD_HOTKEY = 'CommandOrControl+Shift+Q';
+const HUD_WIDTH = 240;
+const HUD_MAX_HEIGHT = 320;
+const HUD_AUTO_DISMISS_MS = 4500;
 const SPARKLINE_INTERVAL_MS = 10 * 60 * 1000;
 const UPDATE_CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 const UPDATE_AUTO_INSTALL_DELAY_MS = 60 * 1000;
@@ -36,6 +52,8 @@ if (!app.requestSingleInstanceLock()) {
 let mainWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
 let tickerWindow: BrowserWindow | null = null;
+let hudWindow: BrowserWindow | null = null;
+let hudDismissTimer: NodeJS.Timeout | null = null;
 const detachedWindows = new Map<string, BrowserWindow>();
 const chartWindows = new Map<string, BrowserWindow>();
 
@@ -46,6 +64,13 @@ let updateCheckTimer: NodeJS.Timeout | null = null;
 let updateAutoInstallTimer: NodeJS.Timeout | null = null;
 let latestQuotes = new Map<string, Quote>();
 let latestSparklines = new Map<string, number[]>();
+// "Yokken neler oldu" summary: a snapshot taken when the window hides/minimizes,
+// compared against current quotes when it's shown again.
+let hiddenAt: number | null = null;
+let quotesAtHide: Map<string, Quote> | null = null;
+const AWAY_SUMMARY_MIN_HIDDEN_MS = 60_000;
+const AWAY_SUMMARY_MIN_MOVE_PCT = 0.1;
+const AWAY_SUMMARY_MAX_ITEMS = 3;
 const alertState = new Map<
   string,
   {
@@ -92,6 +117,7 @@ function broadcastQuotes() {
   for (const win of detachedWindows.values()) {
     win.webContents.send('quotes-updated', payload);
   }
+  applyTrayMood();
 }
 
 function broadcastWatchlist() {
@@ -148,6 +174,7 @@ function createMainWindow() {
     x,
     y,
     frame: false,
+    transparent: true,
     resizable: true,
     minWidth: 260,
     minHeight: 300,
@@ -162,6 +189,17 @@ function createMainWindow() {
   mainWindow.loadFile(path.join(RENDERER_DIR, 'index.html'));
   mainWindow.once('ready-to-show', () => mainWindow?.show());
   registerForSnapping(mainWindow, () => settings);
+
+  // Minimizing (our own button, or an OS-level shortcut like Win+D/Win+M)
+  // would normally leave a taskbar button behind; "minimize" isn't
+  // cancelable, so instead hide right after so only the tray icon remains,
+  // matching how "Pencereyi Gizle" already behaves.
+  mainWindow.on('minimize', () => {
+    mainWindow?.hide();
+  });
+
+  mainWindow.on('hide', onMainWindowHide);
+  mainWindow.on('show', onMainWindowShow);
 
   const persistBounds = () => {
     if (!mainWindow) return;
@@ -347,6 +385,65 @@ function syncTickerWindow() {
   else closeTickerWindow();
 }
 
+// ---- Quick-peek HUD (global hotkey, transient, near the cursor) ----
+
+function closeHud() {
+  if (hudDismissTimer) {
+    clearTimeout(hudDismissTimer);
+    hudDismissTimer = null;
+  }
+  hudWindow?.close();
+}
+
+function createHud() {
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  const work = display.workArea;
+  const height = HUD_MAX_HEIGHT;
+  const x = Math.min(cursor.x + 16, work.x + work.width - HUD_WIDTH);
+  const y = Math.min(cursor.y + 16, work.y + work.height - height);
+
+  const win = new BrowserWindow({
+    width: HUD_WIDTH,
+    height,
+    x: Math.max(x, work.x),
+    y: Math.max(y, work.y),
+    frame: false,
+    transparent: true,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    show: false,
+    icon: APP_ICON,
+    webPreferences: commonWebPreferences,
+  });
+
+  win.loadFile(path.join(RENDERER_DIR, 'hud.html'));
+  win.once('ready-to-show', () => win.show());
+  win.webContents.once('did-finish-load', () => {
+    win.webContents.send('quotes-updated', Object.fromEntries(latestQuotes));
+  });
+  win.on('closed', () => {
+    if (hudWindow === win) hudWindow = null;
+    if (hudDismissTimer) {
+      clearTimeout(hudDismissTimer);
+      hudDismissTimer = null;
+    }
+  });
+
+  hudWindow = win;
+  hudDismissTimer = setTimeout(() => closeHud(), HUD_AUTO_DISMISS_MS);
+}
+
+function toggleHud() {
+  if (hudWindow) {
+    closeHud();
+    return;
+  }
+  createHud();
+}
+
 function reopenPersistedDetachedWindows() {
   for (const id of Object.keys(settings.detachedWindows)) {
     const item = watchlist.find((i) => i.id === id);
@@ -398,6 +495,13 @@ function createSettingsWindow(focusItemId?: string) {
 
 // ---- Tray ----
 
+const TRAY_ICONS = {
+  neutral: nativeImage.createFromPath(path.join(ASSETS_DIR, 'tray.png')),
+  up: nativeImage.createFromPath(path.join(ASSETS_DIR, 'tray-up.png')),
+  down: nativeImage.createFromPath(path.join(ASSETS_DIR, 'tray-down.png')),
+};
+let trayMood: 'neutral' | 'up' | 'down' = 'neutral';
+
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(ASSETS_DIR, 'tray.png'));
   tray = new Tray(icon);
@@ -411,6 +515,32 @@ function createTray() {
   ]);
   tray.setContextMenu(menu);
   tray.on('click', () => toggleWindow());
+  applyTrayMood();
+}
+
+// Tints the tray icon green/red when the watchlist's average daily change
+// leans clearly one way, so the overall market mood is visible at a glance
+// without opening the window. Resets to neutral when the toggle is off.
+function applyTrayMood() {
+  if (!tray) return;
+  if (!settings.trayMoodEnabled) {
+    if (trayMood !== 'neutral') {
+      trayMood = 'neutral';
+      tray.setImage(TRAY_ICONS.neutral);
+    }
+    return;
+  }
+  const changes = Array.from(latestQuotes.values())
+    .filter((q) => !q.error && Number.isFinite(q.changePercent))
+    .map((q) => q.changePercent as number);
+  if (changes.length === 0) return;
+  const avg = changes.reduce((sum, c) => sum + c, 0) / changes.length;
+  const MOOD_THRESHOLD = 0.3;
+  const nextMood: typeof trayMood = avg > MOOD_THRESHOLD ? 'up' : avg < -MOOD_THRESHOLD ? 'down' : 'neutral';
+  if (nextMood !== trayMood) {
+    trayMood = nextMood;
+    tray.setImage(TRAY_ICONS[nextMood]);
+  }
 }
 
 function toggleWindow() {
@@ -458,9 +588,35 @@ function findChartItemId(win: BrowserWindow): string | null {
   return null;
 }
 
+let mainDeclutterMode = false;
+let mainWindowsLocked = false;
+
 function buildContextMenu(win: BrowserWindow): Menu {
   if (win === mainWindow) {
-    return Menu.buildFromTemplate([
+    const items: MenuItemConstructorOptions[] = [];
+    if (mainDeclutterMode) {
+      items.push(
+        {
+          label: 'Ana Pencereyi Goster',
+          click: () => {
+            mainDeclutterMode = false;
+            mainWindowsLocked = false;
+            mainWindow?.webContents.send('exit-declutter-mode');
+          },
+        },
+        {
+          label: 'Pencereleri Kilitle',
+          type: 'checkbox',
+          checked: mainWindowsLocked,
+          click: () => {
+            mainWindowsLocked = !mainWindowsLocked;
+            mainWindow?.webContents.send('windows-lock-changed', mainWindowsLocked);
+          },
+        },
+        { type: 'separator' }
+      );
+    }
+    items.push(
       { label: 'Simdi Yenile', click: () => refreshQuotes() },
       { label: 'Oge Ekle', click: () => mainWindow?.webContents.send('menu-action', 'open-add') },
       { label: 'Kur Cevirici', click: () => mainWindow?.webContents.send('menu-action', 'open-convert') },
@@ -500,8 +656,9 @@ function buildContextMenu(win: BrowserWindow): Menu {
       { label: 'Ayarlar', click: () => createSettingsWindow() },
       { type: 'separator' },
       { label: 'Pencereyi Gizle', click: () => mainWindow?.hide() },
-      { label: 'Cikis', click: () => app.quit() },
-    ]);
+      { label: 'Cikis', click: () => app.quit() }
+    );
+    return Menu.buildFromTemplate(items);
   }
 
   const detachedId = findDetachedItemId(win);
@@ -521,6 +678,8 @@ function buildContextMenu(win: BrowserWindow): Menu {
         },
       },
       { label: 'Listeye Don', click: () => closeItemWindow(detachedId) },
+      { type: 'separator' },
+      { label: 'Ana Pencereyi Goster', click: () => mainWindow?.show() },
     ]);
   }
 
@@ -536,6 +695,47 @@ function buildContextMenu(win: BrowserWindow): Menu {
   }
 
   return Menu.buildFromTemplate([{ label: 'Kapat', click: () => win.close() }]);
+}
+
+// ---- "Yokken neler oldu" away summary ----
+
+function onMainWindowHide() {
+  hiddenAt = Date.now();
+  quotesAtHide = new Map(latestQuotes);
+}
+
+function onMainWindowShow() {
+  if (hiddenAt != null && Date.now() - hiddenAt >= AWAY_SUMMARY_MIN_HIDDEN_MS) {
+    fireAwaySummary();
+  }
+  hiddenAt = null;
+  quotesAtHide = null;
+}
+
+function fireAwaySummary() {
+  if (!quotesAtHide || !Notification.isSupported()) return;
+  const movers: { label: string; deltaPct: number }[] = [];
+  for (const item of watchlist) {
+    const before = quotesAtHide.get(item.id);
+    const now = latestQuotes.get(item.id);
+    if (!before || !now || before.error || now.error || before.price === 0) continue;
+    const deltaPct = ((now.price - before.price) / before.price) * 100;
+    if (Math.abs(deltaPct) >= AWAY_SUMMARY_MIN_MOVE_PCT) movers.push({ label: item.label, deltaPct });
+  }
+  if (movers.length === 0) return;
+  movers.sort((a, b) => Math.abs(b.deltaPct) - Math.abs(a.deltaPct));
+  const top = movers.slice(0, AWAY_SUMMARY_MAX_ITEMS);
+  const body = top.map((m) => `${m.label} ${m.deltaPct > 0 ? '+' : ''}${m.deltaPct.toFixed(2)}%`).join(', ');
+  const notif = new Notification({
+    title: 'Yokken neler oldu?',
+    body,
+    icon: APP_ICON,
+  });
+  notif.on('click', () => {
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+  notif.show();
 }
 
 // ---- Price target alerts ----
@@ -709,6 +909,9 @@ function registerHotkey() {
   globalShortcut.unregisterAll();
   if (settings.hotkeyEnabled) {
     globalShortcut.register(HOTKEY, () => toggleWindow());
+  }
+  if (settings.hudHotkeyEnabled) {
+    globalShortcut.register(HUD_HOTKEY, () => toggleHud());
   }
 }
 
@@ -891,8 +1094,9 @@ ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
   if (typeof patch.launchAtStartup === 'boolean') {
     app.setLoginItemSettings({ openAtLogin: patch.launchAtStartup });
   }
-  if (typeof patch.hotkeyEnabled === 'boolean') registerHotkey();
+  if (typeof patch.hotkeyEnabled === 'boolean' || typeof patch.hudHotkeyEnabled === 'boolean') registerHotkey();
   if (typeof patch.showTrayIcon === 'boolean') applyTrayVisibility();
+  if (typeof patch.trayMoodEnabled === 'boolean') applyTrayMood();
   if (typeof patch.mainAlwaysOnTopEnabled === 'boolean' || typeof patch.miniAlwaysOnTopEnabled === 'boolean') {
     applyAlwaysOnTop();
   }
@@ -978,6 +1182,12 @@ ipcMain.handle('feedback:submit', (_e, message: string, email?: string) => submi
 
 ipcMain.handle('window:open-settings', (_e, focusItemId?: string) => createSettingsWindow(focusItemId));
 ipcMain.handle('window:hide', () => mainWindow?.hide());
+ipcMain.handle('window:set-declutter', (_e, enabled: boolean) => {
+  mainDeclutterMode = enabled;
+});
+ipcMain.handle('window:set-windows-locked', (_e, locked: boolean) => {
+  mainWindowsLocked = locked;
+});
 ipcMain.handle('window:minimize', () => mainWindow?.minimize());
 ipcMain.handle('window:quit', () => app.quit());
 ipcMain.handle('window:close-self', (e) => {

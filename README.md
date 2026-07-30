@@ -9,7 +9,7 @@ npm install
 npm start
 ```
 
-`npm start` once TypeScript kaynaklarini `dist/` altina derler, sonra Electron'u baslatir. Pencere ekranin sag ust kosesinde, her zaman ustte, cerceve olmadan acilir. Sistem tepsisinde bir simge belirir; sag tik menusunden goster/gizle, simdi yenile, Windows ile baslat ve cikis secenekleri bulunur. Ana pencere ayni zamanda gorev cubugunda da her zaman gorunur (tepsi simgesinden bagimsiz olarak).
+`npm start` once TypeScript kaynaklarini `dist/` altina derler, sonra Electron'u baslatir. Pencere ekranin sag ust kosesinde, her zaman ustte, cerceve olmadan acilir. Sistem tepsisinde bir simge belirir; sag tik menusunden goster/gizle, simdi yenile, Windows ile baslat ve cikis secenekleri bulunur. Ana pencere acikken gorev cubugunda da gorunur (tepsi simgesinden bagimsiz olarak); ancak simge durumuna kucultuldugunde veya "Pencereyi Gizle" ile gizlendiginde gorev cubugundaki girdi de kalkar ve sadece sistem tepsisindeki simge (saatin oldugu alan) kalir — geri getirmek icin o simgeye tiklamak yeterli.
 
 ## Durum cubugu
 
@@ -146,7 +146,9 @@ Izleme listesi ve ayarlar `%APPDATA%/Piyasamatik/` altinda `watchlist.json` ve `
 
 ## Sag tik menusu
 
-Ana pencere, mini pencereler, kayan serit penceresi, grafik penceresi ve ayarlar penceresinin herhangi bir yerine sag tiklamak, o pencereye ozgu hizli islem menusunu acar (ana pencerede: yenile, oge ekle, kur cevirici, haberler, miknatis/otomatik sigdir/her zaman ustte acik-kapali, ayarlar, gizle, cikis; mini pencerede: gecmis grafik, her zaman ustte acik-kapali, listeye don; kayan serit penceresinde: simdi yenile, listeye don). Ana pencere ve mini pencereler icin "her zaman ustte" birbirinden bagimsiz ayarlanabilir — biri acik, digeri kapali olabilir.
+Ana pencere, mini pencereler, kayan serit penceresi, grafik penceresi ve ayarlar penceresinin herhangi bir yerine sag tiklamak, o pencereye ozgu hizli islem menusunu acar (ana pencerede: yenile, oge ekle, kur cevirici, haberler, miknatis/otomatik sigdir/her zaman ustte acik-kapali, ayarlar, gizle, cikis; mini pencerede: gecmis grafik, her zaman ustte acik-kapali, listeye don, **Ana Pencereyi Goster**; kayan serit penceresinde: simdi yenile, listeye don). Ana pencere ve mini pencereler icin "her zaman ustte" birbirinden bagimsiz ayarlanabilir — biri acik, digeri kapali olabilir.
+
+Ana penceredeki listede bos bir alana (bir satirin/karonun uzerine degil) cift tiklamak "widget modu"na gecirir: baslik cubugu, sekmeler ve durum cubugu gizlenir, pencerenin arka plani tamamen saydamlasir (masaustu arkadan gorunur) ve sadece ogelerin kendi kutulari/karolari (kendi opak arka planlariyla) ekranda kalir — sanki her oge kendi basina bir mini pencereymis gibi. Bu moddan cikmanin uc yolu var: bos alana (ya da artik gorunmez olan bosluga) tekrar cift tiklamak, `Esc` tusuna basmak, veya bu moddayken herhangi bir kutuya sag tiklayip acilan menunun en ustundeki "Ana Pencereyi Goster"i secmek. Ayni menudeki "Pencereleri Kilitle" onay kutusu isaretlenirse (sadece Isi Haritasi gorunumunde anlamli), kutulara sol tiklamak artik gecmis fiyat grafigini acmaz — yanlislikla grafik acilmadan kutularla ugrasmak icin. Kilit, widget modundan cikildiginda otomatik olarak kalkar. Ayrica herhangi bir mini pencerenin sag tik menusunden "Ana Pencereyi Goster" secilerek, "Pencereyi Gizle" ile tamamen gizlenmis olan ana pencere de geri getirilebilir.
 
 ## Otomatik sigdir
 
@@ -162,7 +164,7 @@ Her satirda (ve mini pencerede) fiyatin yaninda kucuk bir ok belirir: bir onceki
 
 ## Sekmeler, kategori filtresi ve siralama
 
-Ana pencerede liste ustunde sadece iki sekme gorunur: **★ Favoriler** ve **Tumu**. "Tumu" secildiginde yaninda cikan acilir kutudan (Tumu/Doviz/Altin/Hisse/Endeks/Kripto) belirli bir kategoriye gore de filtreleme yapilabilir. Satirlar surukle-birak ile yeniden siralanabilir (fare ile bir satiri tutup baska bir satirin uzerine birakmak yeterlidir); siralama kalicidir.
+Ana pencerede liste ustunde **★ Favoriler** sekmesi, yaninda bir kategori kutusu (Tumu/Doviz/Altin/Hisse/Endeks/Kripto) ve onun saginda bir **Gorunum** kutusu (Liste/Kompakt/Izgara/Tablo/Kayan Serit/Isi Haritasi) bulunur. Kategori kutusundan herhangi bir secim yapmak — "Tumu" dahil — Favoriler filtresinden de cikar (eskiden ayri bir "Tumu" sekmesiyle yapilan isi tek adimda yapar). Gorunum kutusu, Ayarlar > Gorunum'daki secimle ayni ayari degistirir; ana pencereden hizlica degistirilebilir. Satirlar surukle-birak ile yeniden siralanabilir (fare ile bir satiri tutup baska bir satirin uzerine birakmak yeterlidir); siralama kalicidir.
 
 ## Fiyat, yuzde ve oran alarmlari
 
@@ -174,6 +176,20 @@ Yeni bir oge izleme listesine eklendiginde Ayarlar penceresi otomatik acilir ve 
 Herhangi bir esige ulasildiginda Windows bildirimi (toast) gosterilir; esik asildiktan sonra deger tekrar esigin diger tarafina donup gelmeden ayni alarm bir daha tetiklenmez (yeniden "silahlanir"). Ana listede alarm tanimli ogelerin yaninda kucuk bir nokta gorunur.
 
 **Genel alarm** (Ayarlar > Alarm): tek bir gunluk % artis/azalis esigi belirleyip, izleme listenizdeki **tum** ogelere aym anda uygulayabilirsiniz — her ogeye tek tek gitmeden. Bu, yukaridaki oge-bazli alarmlardan bagimsiz calisir; ikisi ayni oge icin birlikte de tanimlanabilir. Ornek: genel alarmda hem artis hem azalis esigini %5 yaparsaniz, izlenen herhangi bir oge gun icinde %5 veya daha fazla hareket ettiginde bildirim alirsiniz.
+
+**Korelasyon cizgisi**: Izgara gorunumunde bir oge icin Oran alarmi kuruluysa, o oge ile karsilastirildigi ogenin kutulari arasinda ince, hareketli, kesikli bir cizgi belirir — iliskiyi ayarlara girmeden gorsel olarak takip edebilirsiniz. Baska bir gorunum moduna gecince cizgi kaybolur, Izgara'ya donunce alarmi yeniden kurmaya gerek kalmadan geri gelir.
+
+## Piyasa nabzi (tepsi simgesi)
+
+Ayarlar > Genel'de acik oldugunda (varsayilan acik), sistem tepsisindeki simge izlenen tum ogelerin ortalama gunluk degisim yuzdesine gore yesile veya kirmiziya doner (ortalama %0.3'un uzerinde/altinda kaldiginda); notrken mavi kalir. Pencereyi hic acmadan, goz ucuyla piyasanin genel havasini gorebilirsiniz.
+
+## "Yokken neler oldu?" ozeti
+
+Ana pencere en az 1 dakika gizli/simge durumunda kaldiktan sonra tekrar gosterildiginde, o sure icinde en cok hareket eden (en fazla %0.1 degisen) en fazla 3 oge icin bir Windows bildirimi belirir (orn. "USD/TRY +2.10%, BTC -4.80%"). 1 dakikadan kisa surelerde veya hicbir oge yeterince hareket etmediyse bildirim gosterilmez.
+
+## Hizli bakis (global kisayol)
+
+`Ctrl+Shift+Q` (Ayarlar > Genel'den kapatilabilir) herhangi bir uygulamadayken calisir: fare imlecinin yanında, favori ogelerinizin fiyat/degisim bilgisini gosteren kucuk, saydam bir pencere acar. Yaklasik 4.5 saniye sonra kendiliginden kapanir; erken kapatmak icin uzerine tiklamak veya kisayola tekrar basmak yeterlidir. Favori oge yoksa bunun yerine kisa bir bilgilendirme mesaji gosterilir.
 
 ## Portfoy (adet/maliyet) takibi
 

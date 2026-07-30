@@ -20,6 +20,15 @@ const CATEGORY_OPTIONS: { key: ItemCategory; label: string }[] = [
   { key: 'crypto', label: 'Kripto' },
 ];
 
+const VIEW_MODE_OPTIONS: { key: ViewMode; label: string }[] = [
+  { key: 'list', label: 'Liste' },
+  { key: 'compact', label: 'Kompakt' },
+  { key: 'grid', label: 'Izgara' },
+  { key: 'table', label: 'Tablo' },
+  { key: 'ticker', label: 'Kayan Serit' },
+  { key: 'heatmap', label: 'Isi Haritasi' },
+];
+
 let watchlist: WatchlistItem[] = [];
 let quotes: Record<string, Quote> = {};
 let sparklines: Record<string, number[]> = {};
@@ -131,7 +140,8 @@ function requestAutofit() {
   const contentHeight = listEl.scrollHeight;
   listEl.style.height = prevHeight;
 
-  const height = 34 + 30 + contentHeight + 20 + 12;
+  const chromeHeight = declutterMode ? 0 : 34 + 30 + 20;
+  const height = chromeHeight + contentHeight + 12;
   window.miniTakip.requestAutofit(document.body.clientWidth, height);
 }
 
@@ -148,21 +158,10 @@ function renderTabs() {
   });
   tabsEl.appendChild(favBtn);
 
-  const allBtn = document.createElement('button');
-  allBtn.textContent = 'Tumu';
-  allBtn.className = activeFilter !== 'favorites' ? 'tab active' : 'tab';
-  allBtn.addEventListener('click', () => {
-    activeFilter = 'all';
-    renderTabs();
-    render();
-  });
-  tabsEl.appendChild(allBtn);
-
-  // Only meaningful once "Tumu" is active; lets the user narrow the list to
-  // a single category without needing a dedicated tab button per category.
+  // Doubles as the old "Tumu" tab: picking any option here (including "Tumu")
+  // switches away from the favorites-only filter too, so it's always enabled.
   const select = document.createElement('select');
   select.className = 'category-select';
-  select.disabled = activeFilter === 'favorites';
   const allOption = document.createElement('option');
   allOption.value = 'all';
   allOption.textContent = 'Tumu';
@@ -180,6 +179,23 @@ function renderTabs() {
     render();
   });
   tabsEl.appendChild(select);
+
+  const viewSelect = document.createElement('select');
+  viewSelect.className = 'category-select';
+  viewSelect.title = 'Gorunum';
+  for (const mode of VIEW_MODE_OPTIONS) {
+    const opt = document.createElement('option');
+    opt.value = mode.key;
+    opt.textContent = mode.label;
+    viewSelect.appendChild(opt);
+  }
+  viewSelect.value = currentViewMode;
+  viewSelect.addEventListener('change', async () => {
+    const updated = await window.miniTakip.setSettings({ viewMode: viewSelect.value as ViewMode });
+    applyViewMode(updated.viewMode);
+    render();
+  });
+  tabsEl.appendChild(viewSelect);
 }
 
 function buildSparklineSvg(values: number[]): string {
@@ -247,6 +263,7 @@ function buildRow(item: WatchlistItem): HTMLDivElement {
   const isDetached = detachedIds.includes(item.id);
   const row = document.createElement('div');
   row.className = 'row';
+  row.id = `row-${item.id}`;
   if (item.color) row.style.borderLeft = `3px solid ${item.color}`;
   attachDragHandlers(row, item);
 
@@ -407,7 +424,10 @@ function buildHeatTile(item: WatchlistItem): HTMLDivElement {
   change.textContent = quote && !quote.error ? formatChange(quote.changePercent) : '';
   tile.appendChild(change);
 
-  tile.addEventListener('click', () => window.miniTakip.openChart(item.id));
+  tile.addEventListener('click', () => {
+    if (windowsLocked) return;
+    window.miniTakip.openChart(item.id);
+  });
   return tile;
 }
 
@@ -453,7 +473,63 @@ function render() {
   if (currentViewMode === 'heatmap') renderHeatmap(visible);
   else for (const item of visible) listEl.appendChild(buildRow(item));
   requestAutofit();
+  drawCorrelationLines();
 }
+
+// Draws a subtle animated line between two Izgara tiles that have a ratio
+// alarm configured between them, so the correlation is visible at a glance
+// instead of only living in the alarm's settings.
+function drawCorrelationLines() {
+  const existing = document.getElementById('correlation-overlay');
+  existing?.remove();
+  if (currentViewMode !== 'grid') return;
+
+  const pairs: { from: HTMLElement; to: HTMLElement }[] = [];
+  for (const item of watchlist) {
+    if (!item.alertRatioTargetId) continue;
+    const from = document.getElementById(`row-${item.id}`);
+    const to = document.getElementById(`row-${item.alertRatioTargetId}`);
+    if (from && to) pairs.push({ from, to });
+  }
+  if (pairs.length === 0) return;
+
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.id = 'correlation-overlay';
+  svg.setAttribute('width', String(listEl.scrollWidth));
+  svg.setAttribute('height', String(listEl.scrollHeight));
+
+  for (const { from, to } of pairs) {
+    const x1 = from.offsetLeft + from.offsetWidth / 2;
+    const y1 = from.offsetTop + from.offsetHeight / 2;
+    const x2 = to.offsetLeft + to.offsetWidth / 2;
+    const y2 = to.offsetTop + to.offsetHeight / 2;
+
+    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line.setAttribute('class', 'correlation-line');
+    line.setAttribute('x1', String(x1));
+    line.setAttribute('y1', String(y1));
+    line.setAttribute('x2', String(x2));
+    line.setAttribute('y2', String(y2));
+    svg.appendChild(line);
+
+    for (const [cx, cy] of [
+      [x1, y1],
+      [x2, y2],
+    ]) {
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('class', 'correlation-dot');
+      dot.setAttribute('cx', String(cx));
+      dot.setAttribute('cy', String(cy));
+      dot.setAttribute('r', '3');
+      svg.appendChild(dot);
+    }
+  }
+  listEl.appendChild(svg);
+}
+
+window.addEventListener('resize', () => {
+  if (currentViewMode === 'grid') drawCorrelationLines();
+});
 
 window.miniTakip.onQuotesUpdated((updated) => {
   const newDirections: Record<string, { html: string; cls: string }> = {};
@@ -499,8 +575,10 @@ window.miniTakip.onSettingsChanged((settings) => {
   transparentEnabled = settings.transparentEnabled;
   applyTransparentButton();
   applyGridShowCategory(settings.gridShowCategory);
-  if (viewModeChanged) render();
-  else if (autofitEnabled) requestAutofit();
+  if (viewModeChanged) {
+    renderTabs();
+    render();
+  } else if (autofitEnabled) requestAutofit();
 });
 
 window.miniTakip.onMenuAction((action) => {
@@ -512,6 +590,52 @@ window.miniTakip.onMenuAction((action) => {
 document.addEventListener('contextmenu', (e) => {
   e.preventDefault();
   window.miniTakip.showContextMenu();
+});
+
+// Double-clicking empty space (not a row/tile) toggles a decluttered "widget
+// mode": the titlebar, tabs and status bar hide and the window background
+// becomes transparent, leaving only the item rows/tiles themselves visible
+// (they keep their own opaque background). Double-click empty space again,
+// or press Escape, to return to the normal view.
+let declutterMode = false;
+// Toggled from the "Pencereleri Kilitle" item in the widget-mode context menu;
+// while locked, left-clicking a tile does not open its chart ("fiyat ekrani").
+let windowsLocked = false;
+
+function applyDeclutterMode() {
+  document.body.classList.toggle('declutter-mode', declutterMode);
+  window.miniTakip.setDeclutterMode(declutterMode);
+  if (!declutterMode && windowsLocked) {
+    windowsLocked = false;
+    window.miniTakip.setWindowsLocked(false);
+  }
+  requestAutofit();
+}
+
+listEl.addEventListener('dblclick', (e) => {
+  // Rows are direct children of #list in every view mode except heatmap,
+  // where tiles sit inside a .heat-grid wrapper; check for an actual item
+  // ancestor instead of exact target equality so gaps count as empty space
+  // in every mode, not just the ones where #list itself is the direct parent.
+  if ((e.target as HTMLElement).closest('.row, .heat-tile')) return;
+  declutterMode = !declutterMode;
+  applyDeclutterMode();
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && declutterMode) {
+    declutterMode = false;
+    applyDeclutterMode();
+  }
+});
+
+window.miniTakip.onExitDeclutterMode(() => {
+  declutterMode = false;
+  applyDeclutterMode();
+});
+
+window.miniTakip.onWindowsLockChanged((locked) => {
+  windowsLocked = locked;
 });
 
 document.getElementById('btn-refresh')!.addEventListener('click', () => {
@@ -720,7 +844,6 @@ document.getElementById('btn-refresh-news')!.addEventListener('click', () => {
 });
 
 async function init() {
-  renderTabs();
   const [wl, ids, settings, sparks] = await Promise.all([
     window.miniTakip.getWatchlist(),
     window.miniTakip.getDetachedIds(),
@@ -740,6 +863,7 @@ async function init() {
   transparentEnabled = settings.transparentEnabled;
   applyTransparentButton();
   applyGridShowCategory(settings.gridShowCategory);
+  renderTabs();
   renderStatusBar();
   render();
 }

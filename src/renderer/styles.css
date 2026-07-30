@@ -38,7 +38,15 @@ body.theme-light {
   display: none !important;
 }
 
-html,
+html {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  /* No background here: body (whose --bg tracks the theme) always fully
+     covers html in normal mode, and declutter mode relies on html having no
+     opaque background of its own to actually show through. */
+}
+
 body {
   margin: 0;
   padding: 0;
@@ -176,9 +184,39 @@ textarea:focus-visible,
 }
 
 #list {
+  position: relative;
   overflow-y: auto;
   height: calc(100% - 34px - 30px - 20px);
   padding: 5px;
+}
+
+/* ---- Ratio-alarm correlation line (Izgara view only) ---- */
+
+#correlation-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.correlation-line {
+  stroke: var(--accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  fill: none;
+  opacity: 0.6;
+  animation: correlation-flow 1.2s linear infinite;
+}
+
+.correlation-dot {
+  fill: var(--accent);
+  opacity: 0.85;
+}
+
+@keyframes correlation-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
 }
 
 /* ---- Status bar ---- */
@@ -209,6 +247,23 @@ textarea:focus-visible,
 
 #status-version {
   flex-shrink: 0;
+}
+
+/* ---- Declutter (widget) mode: hide chrome, see-through background ---- */
+
+body.declutter-mode {
+  background: transparent;
+}
+
+body.declutter-mode #titlebar,
+body.declutter-mode #category-tabs,
+body.declutter-mode #status-bar {
+  display: none;
+}
+
+body.declutter-mode #list {
+  height: 100%;
+  background: transparent;
 }
 
 .row {
@@ -1594,4 +1649,61 @@ body.accent-purple {
 
 .accent-swatch[data-accent='purple'] span {
   background: #8a4fd6;
+}
+
+/* ---- Quick-peek HUD (transient, transparent window near the cursor) ---- */
+
+body.hud-body {
+  background: transparent;
+  padding: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+#hud-list {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  opacity: 0.96;
+}
+
+.hud-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.hud-row + .hud-row {
+  border-top: 1px solid var(--border);
+}
+
+.hud-label {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-price {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}
+
+.hud-change {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+  min-width: 46px;
+  text-align: right;
+}
+
+.hud-empty {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 6px 0;
 }

@@ -44,6 +44,12 @@ const targets = [
     platform: 'browser',
     target: 'chrome120',
   },
+  {
+    entry: 'src/renderer/hud.ts',
+    outfile: 'dist/renderer/hud.js',
+    platform: 'browser',
+    target: 'chrome120',
+  },
 ];
 
 async function run() {
@@ -68,7 +74,7 @@ async function run() {
   // copy static renderer assets
   const fs = require('fs');
   fs.mkdirSync('dist/renderer', { recursive: true });
-  for (const file of ['index.html', 'mini.html', 'settings.html', 'chart.html', 'ticker.html', 'styles.css']) {
+  for (const file of ['index.html', 'mini.html', 'settings.html', 'chart.html', 'ticker.html', 'hud.html', 'styles.css']) {
     fs.copyFileSync(`src/renderer/${file}`, `dist/renderer/${file}`);
   }
   console.log('copied renderer static assets');
