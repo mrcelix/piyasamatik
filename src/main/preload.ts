@@ -73,6 +73,10 @@ const api = {
   },
   getAuthUser: (): Promise<AuthUser | null> => ipcRenderer.invoke('auth:get-user'),
   signInWithGoogle: (): Promise<{ user?: AuthUser; error?: string }> => ipcRenderer.invoke('auth:sign-in-google'),
+  signUpWithEmail: (email: string, password: string): Promise<{ user?: AuthUser; needsConfirmation?: boolean; error?: string }> =>
+    ipcRenderer.invoke('auth:sign-up-email', email, password),
+  signInWithEmail: (email: string, password: string): Promise<{ user?: AuthUser; error?: string }> =>
+    ipcRenderer.invoke('auth:sign-in-email', email, password),
   signOut: (): Promise<void> => ipcRenderer.invoke('auth:sign-out'),
   onAuthChanged: (cb: (user: AuthUser | null) => void) => {
     ipcRenderer.on('auth-changed', (_e, user) => cb(user));

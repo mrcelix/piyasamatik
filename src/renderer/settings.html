@@ -154,7 +154,20 @@
         <section id="section-account" class="settings-panel">
           <h3>Hesap</h3>
           <div id="account-logged-out">
-            <p class="settings-hint">Ayarlarinizi ve izleme listenizi baska bir cihazla senkronize etmek icin Google hesabinizla giris yapin.</p>
+            <p class="settings-hint">Ayarlarinizi ve izleme listenizi baska bir cihazla senkronize etmek icin giris yapin veya e-posta ile uye olun.</p>
+            <div class="settings-row">
+              <label for="input-email-address">E-posta</label>
+              <input id="input-email-address" type="email" placeholder="ornek@eposta.com" autocomplete="email" />
+            </div>
+            <div class="settings-row">
+              <label for="input-email-password">Sifre</label>
+              <input id="input-email-password" type="password" placeholder="En az 6 karakter" autocomplete="current-password" />
+            </div>
+            <div class="manage-actions">
+              <button id="btn-email-signin" class="save-detail">Giris Yap</button>
+              <button id="btn-email-signup" class="save-detail">E-posta ile Uye Ol</button>
+            </div>
+            <p class="settings-hint">veya</p>
             <button id="btn-google-signin" class="save-detail">Google ile Giris Yap</button>
           </div>
           <div id="account-logged-in" class="hidden">

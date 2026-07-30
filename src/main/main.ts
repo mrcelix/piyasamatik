@@ -27,7 +27,18 @@ import {
 } from './providers';
 import type { Quote, WatchlistItem } from './providers/types';
 import { registerForSnapping, clampToVisibleDisplay } from './windows';
-import { signInWithGoogle, signOut, getCurrentUser, cloudRowExists, pullFromCloud, pushToCloud, submitFeedback, type AuthUser } from './auth';
+import {
+  signInWithGoogle,
+  signUpWithEmail,
+  signInWithEmail,
+  signOut,
+  getCurrentUser,
+  cloudRowExists,
+  pullFromCloud,
+  pushToCloud,
+  submitFeedback,
+  type AuthUser,
+} from './auth';
 import { randomUUID } from 'crypto';
 
 const ASSETS_DIR = path.join(__dirname, '..', '..', 'assets');
@@ -1142,15 +1153,12 @@ ipcMain.handle('update:get-version', () => app.getVersion());
 
 ipcMain.handle('auth:get-user', () => currentUser);
 
-ipcMain.handle('auth:sign-in-google', async () => {
-  const result = await signInWithGoogle();
-  if (!result.user) return { error: result.error };
-
-  currentUser = result.user;
+async function completeSignIn(user: AuthUser): Promise<void> {
+  currentUser = user;
   try {
-    const exists = await cloudRowExists(currentUser.id);
+    const exists = await cloudRowExists(user.id);
     if (exists) {
-      const cloud = await pullFromCloud(currentUser.id);
+      const cloud = await pullFromCloud(user.id);
       if (cloud) {
         Object.assign(settings, cloud.settings);
         watchlist = cloud.watchlist;
@@ -1162,12 +1170,33 @@ ipcMain.handle('auth:sign-in-google', async () => {
         refreshSparklines();
       }
     } else {
-      await pushToCloud(currentUser.id, settings, watchlist);
+      await pushToCloud(user.id, settings, watchlist);
     }
   } catch (err) {
     console.error('post-login cloud sync failed', err);
   }
   broadcastAuth();
+}
+
+ipcMain.handle('auth:sign-in-google', async () => {
+  const result = await signInWithGoogle();
+  if (!result.user) return { error: result.error };
+  await completeSignIn(result.user);
+  return { user: currentUser };
+});
+
+ipcMain.handle('auth:sign-up-email', async (_e, email: string, password: string) => {
+  const result = await signUpWithEmail(email, password);
+  if (result.error) return { error: result.error };
+  if (result.needsConfirmation) return { needsConfirmation: true };
+  if (result.user) await completeSignIn(result.user);
+  return { user: currentUser };
+});
+
+ipcMain.handle('auth:sign-in-email', async (_e, email: string, password: string) => {
+  const result = await signInWithEmail(email, password);
+  if (!result.user) return { error: result.error };
+  await completeSignIn(result.user);
   return { user: currentUser };
 });
 

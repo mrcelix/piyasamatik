@@ -1,7 +1,7 @@
 {
   "name": "piyasamatik",
   "productName": "Piyasamatik",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Doviz, altin, ABD borsasi ve kripto para takip masaustu widget'i",
   "main": "dist/main/main.js",
   "private": true,

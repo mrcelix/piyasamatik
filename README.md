@@ -42,12 +42,13 @@ Uygulama tamamen kendi kendine guncellenir (`electron-updater`): acilista, her 4
 
 Paketlenmemis (gelistirme) modda "Guncellemeleri kontrol et" butonu bilgilendirici bir mesaj gosterir, hata vermez — auto-update sadece `npm run pack`/`npm run release` ile paketlenmis kurulumlarda calisir.
 
-## Uyelik ve Google ile giris (Supabase)
+## Uyelik ve giris (Supabase)
 
-Ayarlar > Hesap bolumunden Google hesabiyla giris yapilabilir; giris yapan kullanicinin ayarlari ve izleme listesi Supabase'e (Postgres + Auth) kaydedilir, boylece ayni hesapla baska bir bilgisayarda da senkronize olur.
+Ayarlar > Hesap bolumunden Google hesabiyla veya dogrudan e-posta/sifre ile giris yapilabilir/uye olunabilir; giris yapan kullanicinin ayarlari ve izleme listesi Supabase'e (Postgres + Auth) kaydedilir, boylece ayni hesapla baska bir bilgisayarda da senkronize olur.
 
 **Nasil calisir:**
 - Google girisi, uygulamanin gecici olarak actigi bir `http://127.0.0.1:<port>/callback` yerel sunucusu ile PKCE akisi kullanir; sistem tarayicisinda Google giris ekrani acilir, tamamlaninca tarayici bu yerel adrese yonlendirilir ve uygulama oturumu tamamlar.
+- E-posta ile uyelik/giris dogrudan uygulama icinden, tarayici acilmadan calisir (Supabase'in e-posta/sifre kimlik dogrulamasi). Supabase projenizde "Confirm email" ayari acik ise, kayittan sonra hesabi aktiflestirmek icin kullaniciya gonderilen e-postadaki baglantiya tiklamasi gerekir; uygulama bu durumu "Hesabinizi onaylamak icin e-postaniza gonderilen baglantiya tiklayin" mesajiyla bildirir.
 - Oturum bilgisi (refresh token) `safeStorage` ile diskte sifreli olarak saklanir, uygulama kapatilip acildiginda tekrar giris istemez.
 - Ilk girişte: bulutta bu hesaba ait veri varsa (baska bir cihazdan) o veri cekilip yerel ayarlarin/izleme listesinin uzerine yazilir; yoksa mevcut yerel veriniz buluta yuklenir.
 - Sonraki her ayar/izleme listesi degisikligi, giris yapiliyken birkaç saniye içinde otomatik olarak buluta yazilir (debounce).

@@ -42,6 +42,10 @@ const accountEmailEl = document.getElementById('account-email') as HTMLSpanEleme
 const accountStatusTextEl = document.getElementById('account-status-text') as HTMLParagraphElement;
 const btnGoogleSignIn = document.getElementById('btn-google-signin') as HTMLButtonElement;
 const btnGoogleSignOut = document.getElementById('btn-google-signout') as HTMLButtonElement;
+const inputEmailAddress = document.getElementById('input-email-address') as HTMLInputElement;
+const inputEmailPassword = document.getElementById('input-email-password') as HTMLInputElement;
+const btnEmailSignIn = document.getElementById('btn-email-signin') as HTMLButtonElement;
+const btnEmailSignUp = document.getElementById('btn-email-signup') as HTMLButtonElement;
 const inputGlobalAlertEnabled = document.getElementById('input-global-alert-enabled') as HTMLInputElement;
 const inputGlobalAlertUp = document.getElementById('input-global-alert-up') as HTMLInputElement;
 const inputGlobalAlertDown = document.getElementById('input-global-alert-down') as HTMLInputElement;
@@ -92,6 +96,56 @@ btnGoogleSignOut.addEventListener('click', async () => {
   await window.miniTakip.signOut();
   renderAuth(null);
   accountStatusTextEl.textContent = '';
+});
+
+function readEmailForm(): { email: string; password: string } | null {
+  const email = inputEmailAddress.value.trim();
+  const password = inputEmailPassword.value;
+  if (!email || !password) {
+    accountStatusTextEl.textContent = 'Lutfen e-posta ve sifre girin.';
+    return null;
+  }
+  if (password.length < 6) {
+    accountStatusTextEl.textContent = 'Sifre en az 6 karakter olmali.';
+    return null;
+  }
+  return { email, password };
+}
+
+btnEmailSignIn.addEventListener('click', async () => {
+  const form = readEmailForm();
+  if (!form) return;
+  btnEmailSignIn.disabled = true;
+  accountStatusTextEl.textContent = 'Giris yapiliyor...';
+  const result = await window.miniTakip.signInWithEmail(form.email, form.password);
+  btnEmailSignIn.disabled = false;
+  if (result.error) {
+    accountStatusTextEl.textContent = `Giris basarisiz: ${result.error}`;
+    return;
+  }
+  accountStatusTextEl.textContent = '';
+  inputEmailPassword.value = '';
+  renderAuth(result.user ?? null);
+});
+
+btnEmailSignUp.addEventListener('click', async () => {
+  const form = readEmailForm();
+  if (!form) return;
+  btnEmailSignUp.disabled = true;
+  accountStatusTextEl.textContent = 'Hesap olusturuluyor...';
+  const result = await window.miniTakip.signUpWithEmail(form.email, form.password);
+  btnEmailSignUp.disabled = false;
+  if (result.error) {
+    accountStatusTextEl.textContent = `Kayit basarisiz: ${result.error}`;
+    return;
+  }
+  if (result.needsConfirmation) {
+    accountStatusTextEl.textContent = 'Hesabinizi onaylamak icin e-postaniza gonderilen baglantiya tiklayin.';
+    return;
+  }
+  accountStatusTextEl.textContent = '';
+  inputEmailPassword.value = '';
+  renderAuth(result.user ?? null);
 });
 
 window.miniTakip.onAuthChanged((user) => {

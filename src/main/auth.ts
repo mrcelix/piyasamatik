@@ -139,6 +139,34 @@ export async function signInWithGoogle(): Promise<{ user?: AuthUser; error?: str
   }
 }
 
+export async function signUpWithEmail(
+  email: string,
+  password: string
+): Promise<{ user?: AuthUser; needsConfirmation?: boolean; error?: string }> {
+  try {
+    const { data, error } = await supabase.auth.signUp({ email, password });
+    if (error) return { error: error.message };
+    const user = toAuthUser(data.session);
+    // A null session (despite no error) means Supabase's "confirm email" setting
+    // is on: the account was created but needs the emailed link before it can log in.
+    if (!user) return { needsConfirmation: true };
+    return { user };
+  } catch (err: any) {
+    return { error: err?.message ?? 'Bilinmeyen hata' };
+  }
+}
+
+export async function signInWithEmail(email: string, password: string): Promise<{ user?: AuthUser; error?: string }> {
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) return { error: error.message };
+    const user = toAuthUser(data.session);
+    return user ? { user } : { error: 'Oturum olusturulamadi' };
+  } catch (err: any) {
+    return { error: err?.message ?? 'Bilinmeyen hata' };
+  }
+}
+
 export async function signOut(): Promise<void> {
   await supabase.auth.signOut();
 }
