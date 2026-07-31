@@ -81,6 +81,28 @@ const DEFAULT_SETTINGS: Settings = {
   detachedWindows: {},
 };
 
+export interface WatchlistList {
+  id: string;
+  name: string;
+}
+
+// A single buy/sell entry against a watchlist item, used to derive an
+// average-cost position (quantity, cost basis) and realized P/L, as an
+// alternative to manually typing a single quantity + average cost.
+export interface Transaction {
+  id: string;
+  itemId: string;
+  type: 'buy' | 'sell';
+  quantity: number;
+  price: number;
+  date: number; // epoch ms
+  note?: string;
+}
+
+export const DEFAULT_LIST_ID = 'default';
+
+const DEFAULT_LISTS: WatchlistList[] = [{ id: DEFAULT_LIST_ID, name: 'Izleme Listesi' }];
+
 const DEFAULT_WATCHLIST: WatchlistItem[] = [
   { id: 'cur-usd', category: 'currency', symbol: 'USD', label: 'USD/TRY', currency: 'TRY' },
   { id: 'cur-eur', category: 'currency', symbol: 'EUR', label: 'EUR/TRY', currency: 'TRY' },
@@ -137,4 +159,38 @@ export function loadWatchlist(): WatchlistItem[] {
 
 export function saveWatchlist(items: WatchlistItem[]): void {
   writeJson(userDataFile('watchlist.json'), items);
+}
+
+export function loadLists(): WatchlistList[] {
+  const file = userDataFile('lists.json');
+  if (!fs.existsSync(file)) {
+    writeJson(file, DEFAULT_LISTS);
+    return DEFAULT_LISTS;
+  }
+  try {
+    const raw = fs.readFileSync(file, 'utf-8');
+    const parsed = JSON.parse(raw) as WatchlistList[];
+    return parsed.length > 0 ? parsed : DEFAULT_LISTS;
+  } catch {
+    return DEFAULT_LISTS;
+  }
+}
+
+export function saveLists(lists: WatchlistList[]): void {
+  writeJson(userDataFile('lists.json'), lists);
+}
+
+export function loadTransactions(): Transaction[] {
+  const file = userDataFile('transactions.json');
+  if (!fs.existsSync(file)) return [];
+  try {
+    const raw = fs.readFileSync(file, 'utf-8');
+    return JSON.parse(raw) as Transaction[];
+  } catch {
+    return [];
+  }
+}
+
+export function saveTransactions(transactions: Transaction[]): void {
+  writeJson(userDataFile('transactions.json'), transactions);
 }

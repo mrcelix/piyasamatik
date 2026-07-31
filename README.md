@@ -1,4 +1,4 @@
-# Piyasamatik
+# Piyasamatik.com
 
 Doviz, altin, ABD borsasi (hisse/endeks) ve kripto para takibi icin Electron tabanli, sistem tepsisinde yasayan bir masaustu widget'i.
 
@@ -10,6 +10,8 @@ npm start
 ```
 
 `npm start` once TypeScript kaynaklarini `dist/` altina derler, sonra Electron'u baslatir. Pencere ekranin sag ust kosesinde, her zaman ustte, cerceve olmadan acilir. Sistem tepsisinde bir simge belirir; sag tik menusunden goster/gizle, simdi yenile, Windows ile baslat ve cikis secenekleri bulunur. Ana pencere acikken gorev cubugunda da gorunur (tepsi simgesinden bagimsiz olarak); ancak simge durumuna kucultuldugunde veya "Pencereyi Gizle" ile gizlendiginde gorev cubugundaki girdi de kalkar ve sadece sistem tepsisindeki simge (saatin oldugu alan) kalir — geri getirmek icin o simgeye tiklamak yeterli.
+
+**Not (kurulan/paketlenen surum icin):** `electron-builder`'a `assets/**` eklenmemis olsaydi kurulu uygulamada tepsi simgesi (ve teorik olarak pencere simgesi de) bos gorunurdu, cunku `assets/` klasoru paketlenmis app'in icine hic kopyalanmiyordu — bu duzeltildi (`package.json` > `build.files`). Yeni bir asset dosyasi eklerseniz bu listeye dahil oldugundan emin olun. Ayrica `app.setAppUserModelId(...)` cagrisi eklendi; bu olmadan Windows bildirimlerinde uygulama adi yerine "electron.app.Electron" gorunur.
 
 ## Durum cubugu
 
@@ -104,7 +106,7 @@ Bu iki adim tamamlanmadan "Google ile Giris Yap" butonu "provider is not enabled
 ## Veri kaynaklari (ucretsiz, API anahtari gerekmez)
 
 - **Doviz & altin (TRY)**: `finans.truncgil.com/today.json` — USD/EUR/... kurlari ve gram/ceyrek/yarim/tam/cumhuriyet/resat/hamit altin, ons altin, gumus, platin.
-- **ABD hisseleri & endeksler**: Yahoo Finance'in resmi olmayan `query1.finance.yahoo.com` chart ve search uc noktalari (key gerekmez, ancak Yahoo bu uc noktalari degistirebilir/rate limit uygulayabilir).
+- **Hisseler & endeksler (ABD ve Borsa Istanbul dahil)**: Yahoo Finance'in resmi olmayan `query1.finance.yahoo.com` chart ve search uc noktalari (key gerekmez, ancak Yahoo bu uc noktalari degistirebilir/rate limit uygulayabilir). BIST hisseleri arama kutusuna sirket adi/kodu yazilarak bulunabilir (orn. "THYAO", "GARAN", "ASELS") — Yahoo bunlari `.IS` uzantili sembol olarak, TRY cinsinden fiyatla dondurur; gecmis grafik ve sparkline da diger hisseler gibi calisir.
 - **Kripto paralar**: CoinGecko public API (`api.coingecko.com`), fiyat ve arama icin.
 
 Bu servisler resmi/dokumante edilmemis veya rate-limit'e tabi olabilir; uzun vadeli kullanimda bir servis calismazsa ilgili saglayici modulu (`src/main/providers/`) guncellenmesi gerekebilir.
@@ -129,7 +131,7 @@ Ana pencerenin dis bardaki disli (⚙) simgesinden Ayarlar penceresi acilir; bur
 - **Izgara** (varsayilan): sabit 120px genislikte, otomatik satirlara bolunen kart gorunumu; kategori etiketi (DOVIZ, HISSE, ...) varsayilan olarak gizlidir, Ayarlar > Gorunum'den acilabilir. Ana pencerenin varsayilan genisligi (390px), ilk acilista tam olarak 3 kart yan yana sigacak sekilde ayarlanmistir (pencere yine de serbestce yeniden boyutlandirilabilir).
 - **Tablo**: tek satirlik, yatay hizali sutunlar (rakip uygulamalardaki klasik piyasa tablosu gorunumu)
 - **Kayan Serit**: bu secim ana pencerede degil, ayri, ince ve her zaman ustte kalan bir "kayan serit" penceresinde acilir (klasik borsa bandi gibi) — tum ogeleri fiyat + degisim ile yatayda kaydirir (uzerine gelince kayma durur). Ana pencerenin kendi listesi bu modda bos kalir, sadece serit penceresinin acildigini belirtir. Serit penceresi kapatilirsa gorunum otomatik olarak Izgara'ya doner; konum/boyutu `settings.json` icinde `tickerWindowBounds` altinda hatirlanir.
-- **Isi Haritasi**: her ogenin degisim yuzdesine gore yesil/kirmizi renk yogunlugunda karolar (Finviz benzeri)
+- **Isi Haritasi**: her ogenin degisim yuzdesine gore yesil/kirmizi renk yogunlugunda karolar (Finviz benzeri). Karolar gunluk degisim yuzdesine gore en yuksekten en dusuge siralanir; bu siralama fiyat guncellemelerinde surekli degismez, sadece 5 dakikada bir yeniden hesaplanir (aksi halde karolar surekli yer degistirir).
 
 ## Ayarlar penceresi (mega-menu)
 
@@ -167,6 +169,10 @@ Her satirda (ve mini pencerede) fiyatin yaninda kucuk bir ok belirir: bir onceki
 
 Ana pencerede liste ustunde **★ Favoriler** sekmesi, yaninda bir kategori kutusu (Tumu/Doviz/Altin/Hisse/Endeks/Kripto) ve onun saginda bir **Gorunum** kutusu (Liste/Kompakt/Izgara/Tablo/Kayan Serit/Isi Haritasi) bulunur. Kategori kutusundan herhangi bir secim yapmak — "Tumu" dahil — Favoriler filtresinden de cikar (eskiden ayri bir "Tumu" sekmesiyle yapilan isi tek adimda yapar). Gorunum kutusu, Ayarlar > Gorunum'daki secimle ayni ayari degistirir; ana pencereden hizlica degistirilebilir. Satirlar surukle-birak ile yeniden siralanabilir (fare ile bir satiri tutup baska bir satirin uzerine birakmak yeterlidir); siralama kalicidir.
 
+## Birden fazla izleme listesi
+
+Ayarlar > Listeler'den adlandirilmis birden fazla izleme listesi olusturulabilir (orn. "Portfoyum", "Takip"). Sadece tek liste varken ana pencerede ekstra bir kutu gorunmez; ikinci bir liste olusturulunca kategori kutusunun soluna bir **liste secici** eklenir. Yeni eklenen ogeler o an secili olan listeye eklenir; bir ogenin listesini sonradan degistirmek icin Ayarlar > Izleme Listesi'ndeki "Alarm" panelinde beliren "Liste" secim kutusu kullanilabilir (bu kutu da yalnizca birden fazla liste varken gorunur). Bir liste silinirse icindeki ogeler otomatik olarak varsayilan listeye tasinir; varsayilan liste veya kalan son liste silinemez.
+
 ## Fiyat, yuzde ve oran alarmlari
 
 Yeni bir oge izleme listesine eklendiginde Ayarlar penceresi otomatik acilir ve o ogenin "Detay" paneline odaklanir, boylece alarm kurulumuna hemen devam edebilirsiniz. Bu panelde uc ayri alarm grubu bulunur:
@@ -196,6 +202,8 @@ Ana pencere en az 1 dakika gizli/simge durumunda kaldiktan sonra tekrar gosteril
 
 Bir ogeye adet ve ortalama maliyet girildiginde ana listede o satirin altinda anlik kar/zarar (tutar ve yuzde) gosterilir. Farkli para birimlerindeki ogeler arasinda toplam bir portfoy degeri hesaplanmaz (yanlis/yaniltici bir toplam vermemek icin) — her oge kendi para biriminde ayri gosterilir.
 
+**Islem defteri**: adet/ortalama maliyeti elle girmek yerine, Ayarlar > Izleme Listesi'ndeki bir ogenin "Alarm" panelinde beliren **Islemler** bolumunden alim/satim islemleri (tarih, adet, fiyat) tek tek girilebilir. En az bir islem girildiginde adet ve ortalama maliyet alanlari bu islemlerden otomatik hesaplanir (ortalama maliyet yontemi) ve elle degistirilemez hale gelir; ayni panelde satislardan dogan **gerceklesen kar/zarar** da ayrica gosterilir. Ana listedeki kar/zarar gostergesi bu durumda hem elde tutulan pozisyonun gerceklesmemis kar/zararini hem de gecmis satislardan gerceklesen kar/zarari toplu olarak yansitir (yuzde ise sadece elde tutulan pozisyon uzerinden hesaplanir). Bir islem silinirse veya oge tamamen kaldirilirsa ilgili islem kayitlari da otomatik temizlenir.
+
 ## Kur cevirici
 
 Ust baslikdaki `⇄` butonu ile doviz/altin/gumus/platin kodlari arasinda miktar cevirebileceginiz kucuk bir hesap makinesi acilir (ABD borsasi/kripto bu cevirici disinda tutuldu, cunku onlarin fiyati zaten dogrudan USD olarak listede gorunuyor).
@@ -224,6 +232,8 @@ Her satirda beliren kucuk grafik simgesine tiklamak, o ogenin gecmis fiyat harek
 - **Doviz/Altin**: ucretsiz bir gecmis veri kaynagi olmadigindan bu pencere "gecmis veri bulunamiyor" mesaji gosterir (sparkline'daki ayni sinirlama).
 
 Grafik penceresinin ust kisminda o anki fiyat ve secili aralik boyunca toplam degisim yuzdesi one cikan bir ozet olarak gosterilir. Grafigin kendisi alani boyayan bir dolgu, ince kilavuz cizgileri ve son noktayi vurgulayan bir nokta ile cizilir; fare ile uzerine gelince o noktanin tarihi/fiyati ve baslangica gore yuzde degisimi bir ipucu kutusunda gorunur. **Iki nokta arasindaki artisi/azalisi yuzde olarak olcmek icin** grafik uzerinde bir noktadan diger noktaya suruklemeniz yeterli — secili araligi vurgulayan bir bant ve o iki nokta arasindaki yuzde + mutlak fark + tarih araligini gosteren bir rozet belirir; rozet fareyi birakinca da ekranda kalir, temizlemek icin bos bir yere tiklamak veya `Esc` tusuna basmak yeterlidir.
+
+Aralik secimlerinin altindaki **SMA 20** ve **RSI 14** dugmeleri, zaten cekilmis gecmis veri uzerinden hesaplanan iki basit teknik gostergeyi acip kapatir: SMA fiyat grafiginin uzerine ince bir cizgi olarak (yeterli veri biriktigi noktadan itibaren) binilir; RSI ise kendi 0-100 olcegiyle grafigin altinda ayri, kucuk bir panelde (30/50/70 kilavuz cizgileriyle) gosterilir. Veri yetersizse ("1G" gibi kisa araliklarda) RSI paneli yerine kisa bir uyari mesaji gorunur.
 
 ## Haber ozeti
 

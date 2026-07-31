@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron';
 import type { WatchlistItem, Quote, SearchResult, HistoryPoint } from './providers/types';
-import type { Settings, UpdateStatus } from './store';
+import type { Settings, UpdateStatus, WatchlistList, Transaction } from './store';
 import type { ConvertCode } from './providers/truncgil';
 import type { ChartRange, NewsItem } from './providers';
 import type { AuthUser } from './auth';
@@ -12,6 +12,19 @@ const api = {
   updateItem: (id: string, patch: Partial<WatchlistItem>): Promise<WatchlistItem[]> =>
     ipcRenderer.invoke('watchlist:update', id, patch),
   reorder: (ids: string[]): Promise<WatchlistItem[]> => ipcRenderer.invoke('watchlist:reorder', ids),
+  getLists: (): Promise<WatchlistList[]> => ipcRenderer.invoke('lists:get'),
+  addList: (name: string): Promise<WatchlistList[]> => ipcRenderer.invoke('lists:add', name),
+  renameList: (id: string, name: string): Promise<WatchlistList[]> => ipcRenderer.invoke('lists:rename', id, name),
+  removeList: (id: string): Promise<WatchlistList[]> => ipcRenderer.invoke('lists:remove', id),
+  onListsChanged: (cb: (lists: WatchlistList[]) => void) => {
+    ipcRenderer.on('lists-changed', (_e, lists) => cb(lists));
+  },
+  getTransactions: (): Promise<Transaction[]> => ipcRenderer.invoke('transactions:get'),
+  addTransaction: (tx: Omit<Transaction, 'id'>): Promise<Transaction[]> => ipcRenderer.invoke('transactions:add', tx),
+  removeTransaction: (id: string): Promise<Transaction[]> => ipcRenderer.invoke('transactions:remove', id),
+  onTransactionsChanged: (cb: (transactions: Transaction[]) => void) => {
+    ipcRenderer.on('transactions-changed', (_e, transactions) => cb(transactions));
+  },
   search: (query: string): Promise<SearchResult[]> => ipcRenderer.invoke('search:query', query),
   refreshNow: (): Promise<void> => ipcRenderer.invoke('quotes:refresh-now'),
   getSparklines: (): Promise<Record<string, number[]>> => ipcRenderer.invoke('sparkline:get-all'),

@@ -14,7 +14,21 @@ import {
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import * as fs from 'fs';
-import { loadSettings, saveSettings, loadWatchlist, saveWatchlist, Settings, UpdateStatus } from './store';
+import {
+  loadSettings,
+  saveSettings,
+  loadWatchlist,
+  saveWatchlist,
+  loadLists,
+  saveLists,
+  loadTransactions,
+  saveTransactions,
+  DEFAULT_LIST_ID,
+  Settings,
+  UpdateStatus,
+  WatchlistList,
+  Transaction,
+} from './store';
 import {
   fetchQuotesForWatchlist,
   searchAllProviders,
@@ -27,6 +41,7 @@ import {
 } from './providers';
 import type { Quote, WatchlistItem } from './providers/types';
 import { registerForSnapping, clampToVisibleDisplay } from './windows';
+import { computePosition } from './position';
 import {
   signInWithGoogle,
   signUpWithEmail,
@@ -98,20 +113,33 @@ const globalAlertState = new Map<string, { upFired: boolean; downFired: boolean 
 let currentUser: AuthUser | null = null;
 let cloudPushTimer: NodeJS.Timeout | null = null;
 
-// The app was renamed from "Mini Takip" to "Piyasamatik", which moves Electron's
-// default userData folder (derived from productName). Copy any existing data over
-// once so returning users don't lose their watchlist/settings/auth session.
+// The app's productName has changed twice now ("Mini Takip" -> "Piyasamatik"
+// -> "Piyasamatik.com"), and Electron's default userData folder is derived
+// from productName each time. Copy any existing data over from the most
+// recent old folder that actually exists, so returning users don't lose
+// their watchlist/settings/auth session across a rename.
 function migrateUserDataFromOldProductName(): void {
-  const oldDir = path.join(app.getPath('appData'), 'Mini Takip');
   const newDir = app.getPath('userData');
-  if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
-    fs.cpSync(oldDir, newDir, { recursive: true });
+  if (fs.existsSync(newDir)) return;
+  const oldNames = ['Piyasamatik', 'Mini Takip'];
+  for (const oldName of oldNames) {
+    const oldDir = path.join(app.getPath('appData'), oldName);
+    if (fs.existsSync(oldDir)) {
+      fs.cpSync(oldDir, newDir, { recursive: true });
+      return;
+    }
   }
 }
 migrateUserDataFromOldProductName();
 
+// Without this, Windows shows the generic "electron.app.Electron" as the
+// sender name on notifications instead of the app's own identity.
+app.setAppUserModelId('com.mustafacelik.piyasamatik');
+
 const settings: Settings = loadSettings();
 let watchlist: WatchlistItem[] = loadWatchlist();
+let lists: WatchlistList[] = loadLists();
+let transactions: Transaction[] = loadTransactions();
 
 const commonWebPreferences = {
   preload: path.join(__dirname, 'preload.js'),
@@ -141,6 +169,16 @@ function broadcastSettings() {
   mainWindow?.webContents.send('settings-changed', settings);
   settingsWindow?.webContents.send('settings-changed', settings);
   tickerWindow?.webContents.send('settings-changed', settings);
+}
+
+function broadcastLists() {
+  mainWindow?.webContents.send('lists-changed', lists);
+  settingsWindow?.webContents.send('lists-changed', lists);
+}
+
+function broadcastTransactions() {
+  mainWindow?.webContents.send('transactions-changed', transactions);
+  settingsWindow?.webContents.send('transactions-changed', transactions);
 }
 
 function broadcastDetachedIds() {
@@ -516,7 +554,7 @@ let trayMood: 'neutral' | 'up' | 'down' = 'neutral';
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(ASSETS_DIR, 'tray.png'));
   tray = new Tray(icon);
-  tray.setToolTip('Piyasamatik');
+  tray.setToolTip('Piyasamatik.com');
   const menu = Menu.buildFromTemplate([
     { label: 'Goster/Gizle', click: () => toggleWindow() },
     { label: 'Ayarlar', click: () => createSettingsWindow() },
@@ -956,7 +994,7 @@ function setupAutoUpdater() {
     if (Notification.isSupported()) {
       const notif = new Notification({
         title: 'Guncelleme hazir',
-        body: `Piyasamatik ${info.version} indirildi. 60 saniye icinde otomatik olarak yuklenip yeniden baslatilacak. Hemen yuklemek icin tiklayin.`,
+        body: `Piyasamatik.com ${info.version} indirildi. 60 saniye icinde otomatik olarak yuklenip yeniden baslatilacak. Hemen yuklemek icin tiklayin.`,
         icon: APP_ICON,
       });
       notif.on('click', () => installUpdateNow());
@@ -1058,6 +1096,11 @@ ipcMain.handle('watchlist:remove', (_e, id: string) => {
   closeChartWindow(id);
   alertState.delete(id);
   globalAlertState.delete(id);
+  if (transactions.some((t) => t.itemId === id)) {
+    transactions = transactions.filter((t) => t.itemId !== id);
+    saveTransactions(transactions);
+    broadcastTransactions();
+  }
   broadcastWatchlist();
   scheduleCloudPush();
   return watchlist;
@@ -1078,6 +1121,51 @@ ipcMain.handle('watchlist:reorder', (_e, orderedIds: string[]) => {
   broadcastWatchlist();
   scheduleCloudPush();
   return watchlist;
+});
+
+ipcMain.handle('lists:get', () => lists);
+
+ipcMain.handle('lists:add', (_e, name: string) => {
+  lists.push({ id: randomUUID(), name });
+  saveLists(lists);
+  broadcastLists();
+  return lists;
+});
+
+ipcMain.handle('lists:rename', (_e, id: string, name: string) => {
+  lists = lists.map((l) => (l.id === id ? { ...l, name } : l));
+  saveLists(lists);
+  broadcastLists();
+  return lists;
+});
+
+ipcMain.handle('lists:remove', (_e, id: string) => {
+  if (id === DEFAULT_LIST_ID || lists.length <= 1) return lists;
+  lists = lists.filter((l) => l.id !== id);
+  saveLists(lists);
+  // Items in the removed list fall back to the default list rather than disappearing.
+  watchlist = watchlist.map((i) => (i.listId === id ? { ...i, listId: DEFAULT_LIST_ID } : i));
+  saveWatchlist(watchlist);
+  broadcastLists();
+  broadcastWatchlist();
+  scheduleCloudPush();
+  return lists;
+});
+
+ipcMain.handle('transactions:get', () => transactions);
+
+ipcMain.handle('transactions:add', (_e, tx: Omit<Transaction, 'id'>) => {
+  transactions.push({ ...tx, id: randomUUID() });
+  saveTransactions(transactions);
+  broadcastTransactions();
+  return transactions;
+});
+
+ipcMain.handle('transactions:remove', (_e, id: string) => {
+  transactions = transactions.filter((t) => t.id !== id);
+  saveTransactions(transactions);
+  broadcastTransactions();
+  return transactions;
 });
 
 ipcMain.handle('search:query', async (_e, query: string) => {

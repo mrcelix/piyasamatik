@@ -7,11 +7,73 @@ let currentRange = '1a';
 let currentCurrency = '';
 let currentPoints: HistoryPoint[] = [];
 let layout: Layout | null = null;
+let showSma = false;
+let showRsi = false;
+
+const SMA_PERIOD = 20;
+const RSI_PERIOD = 14;
 
 const titleEl = document.getElementById('chart-title') as HTMLSpanElement;
 const summaryEl = document.getElementById('chart-summary') as HTMLDivElement;
 const rangeBarEl = document.getElementById('range-bar') as HTMLDivElement;
+const indicatorBarEl = document.getElementById('indicator-bar') as HTMLDivElement;
 const chartAreaEl = document.getElementById('chart-area') as HTMLDivElement;
+
+// ---- Technical indicators (pure math over the already-fetched history) ----
+
+function computeSMA(points: HistoryPoint[], period: number): (number | null)[] {
+  const result: (number | null)[] = new Array(points.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    sum += points[i].v;
+    if (i >= period) sum -= points[i - period].v;
+    if (i >= period - 1) result[i] = sum / period;
+  }
+  return result;
+}
+
+// Standard Wilder's-smoothing RSI.
+function computeRSI(points: HistoryPoint[], period: number): (number | null)[] {
+  const result: (number | null)[] = new Array(points.length).fill(null);
+  if (points.length < period + 1) return result;
+  let gains = 0;
+  let losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const diff = points[i].v - points[i - 1].v;
+    if (diff >= 0) gains += diff;
+    else losses -= diff;
+  }
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  result[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  for (let i = period + 1; i < points.length; i++) {
+    const diff = points[i].v - points[i - 1].v;
+    const gain = diff > 0 ? diff : 0;
+    const loss = diff < 0 ? -diff : 0;
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+    result[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
+  }
+  return result;
+}
+
+// Builds a polyline string from a sparse (nullable) series, breaking into
+// separate segments wherever data is missing instead of bridging the gap.
+function buildSegmentedPolylines(values: (number | null)[], toX: (i: number) => number, toY: (v: number) => number): string {
+  const segments: string[] = [];
+  let current: string[] = [];
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v == null) {
+      if (current.length > 1) segments.push(current.join(' '));
+      current = [];
+      continue;
+    }
+    current.push(`${toX(i).toFixed(1)},${toY(v).toFixed(1)}`);
+  }
+  if (current.length > 1) segments.push(current.join(' '));
+  return segments.map((seg) => `<polyline points="${seg}" fill="none" />`).join('');
+}
 
 function applyTheme(themeMode: 'dark' | 'light') {
   document.body.classList.toggle('theme-light', themeMode === 'light');
@@ -65,7 +127,7 @@ function computeLayout(points: HistoryPoint[]): Layout {
   return { w, h, padX, padY, min, max, range, stepX, toX, toY };
 }
 
-function buildChartSvg(points: HistoryPoint[], l: Layout): string {
+function buildChartSvg(points: HistoryPoint[], l: Layout, smaValues: (number | null)[] | null): string {
   const up = points[points.length - 1].v >= points[0].v;
   const color = up ? 'var(--up)' : 'var(--down)';
   const linePoints = points.map((p, i) => `${l.toX(i).toFixed(1)},${l.toY(p.v).toFixed(1)}`).join(' ');
@@ -73,6 +135,9 @@ function buildChartSvg(points: HistoryPoint[], l: Layout): string {
   const lastX = l.toX(points.length - 1);
   const lastY = l.toY(points[points.length - 1].v);
   const midY = l.toY(l.min + l.range / 2);
+  const smaSvg = smaValues
+    ? buildSegmentedPolylines(smaValues, l.toX, l.toY).replace(/<polyline /g, '<polyline class="sma-line" ')
+    : '';
 
   return `
     <line class="grid-line" x1="${l.padX}" y1="${l.toY(l.max).toFixed(1)}" x2="${l.w - l.padX}" y2="${l.toY(l.max).toFixed(1)}" />
@@ -80,6 +145,7 @@ function buildChartSvg(points: HistoryPoint[], l: Layout): string {
     <line class="grid-line" x1="${l.padX}" y1="${l.toY(l.min).toFixed(1)}" x2="${l.w - l.padX}" y2="${l.toY(l.min).toFixed(1)}" />
     <polygon points="${areaPoints}" fill="${color}" opacity="0.14" />
     <polyline points="${linePoints}" fill="none" stroke="${color}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+    ${smaSvg}
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="4.5" fill="var(--bg-panel)" />
     <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3" fill="${color}" />
     <rect class="measure-band hidden-overlay" id="measure-band" x="0" y="0" width="0" height="${l.h}" />
@@ -87,6 +153,21 @@ function buildChartSvg(points: HistoryPoint[], l: Layout): string {
     <line class="measure-edge hidden-overlay" id="measure-edge-b" x1="0" y1="0" x2="0" y2="${l.h}" />
     <line class="crosshair-line hidden-overlay" id="crosshair-line" x1="0" y1="0" x2="0" y2="${l.h}" />
     <circle class="crosshair-dot hidden-overlay" id="crosshair-dot" r="3.5" fill="${color}" stroke="var(--bg-panel)" stroke-width="1.5" />
+  `;
+}
+
+// RSI gets its own small panel with a fixed 0-100 scale (a different unit
+// than price, so it can't share the main chart's y-axis).
+function buildRsiSvg(rsiValues: (number | null)[], mainLayout: Layout, h: number): string {
+  const padX = mainLayout.padX;
+  const w = mainLayout.w;
+  const toY = (v: number) => h - (v / 100) * h;
+  const line = buildSegmentedPolylines(rsiValues, mainLayout.toX, toY).replace(/<polyline /g, '<polyline class="rsi-line" ');
+  return `
+    <line class="grid-line" x1="${padX}" y1="${toY(70).toFixed(1)}" x2="${w - padX}" y2="${toY(70).toFixed(1)}" />
+    <line class="grid-line" x1="${padX}" y1="${toY(50).toFixed(1)}" x2="${w - padX}" y2="${toY(50).toFixed(1)}" />
+    <line class="grid-line" x1="${padX}" y1="${toY(30).toFixed(1)}" x2="${w - padX}" y2="${toY(30).toFixed(1)}" />
+    ${line}
   `;
 }
 
@@ -253,6 +334,26 @@ function attachInteraction(wrap: HTMLDivElement, l: Layout) {
   });
 }
 
+function renderChartArea() {
+  const points = currentPoints;
+  const l = layout!;
+  const smaValues = showSma ? computeSMA(points, SMA_PERIOD) : null;
+  const rsiValues = showRsi ? computeRSI(points, RSI_PERIOD) : null;
+  const hasRsiData = rsiValues != null && rsiValues.some((v) => v != null);
+
+  const RSI_HEIGHT = 60;
+  const rsiPanel =
+    showRsi && hasRsiData
+      ? `<div class="rsi-panel-wrap"><svg viewBox="0 0 ${l.w} ${RSI_HEIGHT}" class="chart-svg rsi-svg" preserveAspectRatio="none">${buildRsiSvg(rsiValues!, l, RSI_HEIGHT)}</svg></div>`
+      : showRsi
+        ? '<div class="rsi-panel-wrap chart-status rsi-insufficient">RSI icin yetersiz veri</div>'
+        : '';
+
+  chartAreaEl.innerHTML = `<div class="chart-svg-wrap"><svg viewBox="0 0 ${l.w} ${l.h}" class="chart-svg" preserveAspectRatio="none">${buildChartSvg(points, l, smaValues)}</svg></div>${rsiPanel}`;
+  const wrap = chartAreaEl.querySelector('.chart-svg-wrap') as HTMLDivElement;
+  attachInteraction(wrap, l);
+}
+
 async function loadHistory() {
   chartAreaEl.innerHTML = '<div class="chart-status">Yukleniyor...</div>';
   summaryEl.innerHTML = '';
@@ -264,10 +365,7 @@ async function loadHistory() {
   currentPoints = points;
   layout = computeLayout(points);
   renderSummary(points);
-
-  chartAreaEl.innerHTML = `<div class="chart-svg-wrap"><svg viewBox="0 0 ${layout.w} ${layout.h}" class="chart-svg" preserveAspectRatio="none">${buildChartSvg(points, layout)}</svg></div>`;
-  const wrap = chartAreaEl.querySelector('.chart-svg-wrap') as HTMLDivElement;
-  attachInteraction(wrap, layout);
+  renderChartArea();
 }
 
 function renderRangeButtons(ranges: { key: string; label: string }[]) {
@@ -283,6 +381,30 @@ function renderRangeButtons(ranges: { key: string; label: string }[]) {
     });
     rangeBarEl.appendChild(btn);
   }
+}
+
+function renderIndicatorBar() {
+  indicatorBarEl.innerHTML = '';
+
+  const smaBtn = document.createElement('button');
+  smaBtn.textContent = `SMA ${SMA_PERIOD}`;
+  smaBtn.className = showSma ? 'active' : '';
+  smaBtn.addEventListener('click', () => {
+    showSma = !showSma;
+    renderIndicatorBar();
+    if (currentPoints.length > 1) renderChartArea();
+  });
+  indicatorBarEl.appendChild(smaBtn);
+
+  const rsiBtn = document.createElement('button');
+  rsiBtn.textContent = `RSI ${RSI_PERIOD}`;
+  rsiBtn.className = showRsi ? 'active' : '';
+  rsiBtn.addEventListener('click', () => {
+    showRsi = !showRsi;
+    renderIndicatorBar();
+    if (currentPoints.length > 1) renderChartArea();
+  });
+  indicatorBarEl.appendChild(rsiBtn);
 }
 
 document.getElementById('btn-close-chart')!.addEventListener('click', () => {
@@ -319,6 +441,7 @@ async function init() {
   titleEl.textContent = item?.label ?? '???';
   currentCurrency = item?.currency ?? '';
   renderRangeButtons(ranges);
+  renderIndicatorBar();
   await loadHistory();
 }
 

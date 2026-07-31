@@ -1117,11 +1117,76 @@ body.has-accent #btn-mini-chart {
   color: var(--on-accent);
 }
 
+#indicator-bar {
+  display: flex;
+  gap: 4px;
+  height: 32px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+#indicator-bar button {
+  border: none;
+  background: var(--bg-panel);
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 10.5px;
+  padding: 4px 10px;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+#indicator-bar button:hover:not(.active) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+#indicator-bar button.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
 #chart-area {
-  height: calc(100% - 34px - 44px - 40px);
+  height: calc(100% - 34px - 44px - 40px - 32px);
   padding: 10px;
   display: flex;
   flex-direction: column;
+  overflow-y: auto;
+}
+
+.sma-line {
+  stroke: var(--accent);
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  opacity: 0.85;
+}
+
+.rsi-panel-wrap {
+  flex-shrink: 0;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 6px;
+}
+
+.rsi-svg {
+  width: 100%;
+  height: 60px;
+  display: block;
+}
+
+.rsi-line {
+  stroke: var(--accent);
+  stroke-width: 1.3;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.rsi-insufficient {
+  font-size: 10.5px;
+  padding: 8px 0;
+  margin-top: 0;
 }
 
 .chart-status {
@@ -1323,7 +1388,8 @@ body.has-accent #btn-mini-chart {
   height: 16px;
 }
 
-.settings-row input[type='email'] {
+.settings-row input[type='email'],
+.settings-row input[type='text'] {
   width: 160px;
   background: var(--bg-panel);
   border: 1px solid var(--border);
@@ -1331,6 +1397,36 @@ body.has-accent #btn-mini-chart {
   border-radius: 6px;
   padding: 4px 6px;
   font-size: 11px;
+}
+
+.list-name-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 12px;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.list-name-input:hover,
+.list-name-input:focus {
+  background: var(--bg-hover);
+  border-color: var(--border);
+  outline: none;
+}
+
+.transaction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.transaction-list .row-main {
+  font-size: 11.5px;
 }
 
 #feedback-message {

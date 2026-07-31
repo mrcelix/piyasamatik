@@ -24,6 +24,9 @@ export interface WatchlistItem {
   favorite?: boolean;
   // Custom accent color (hex) for this item's row / detached widget.
   color?: string;
+  // Which named watchlist this item belongs to; absent means the default list
+  // (items created before multi-list support existed, or a single-list setup).
+  listId?: string;
 }
 
 export interface Quote {

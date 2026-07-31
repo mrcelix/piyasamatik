@@ -1,6 +1,7 @@
 import type { WatchlistItem, ItemCategory } from '../main/providers/types';
-import type { Settings, ViewMode, ThemeMode, AccentTheme, UpdateStatus } from '../main/store';
+import type { Settings, ViewMode, ThemeMode, AccentTheme, UpdateStatus, WatchlistList, Transaction } from '../main/store';
 import type { AuthUser } from '../main/auth';
+import { computePosition, type ComputedPosition } from '../main/position';
 
 const CATEGORY_LABEL: Record<ItemCategory, string> = {
   currency: 'Doviz',
@@ -10,9 +11,13 @@ const CATEGORY_LABEL: Record<ItemCategory, string> = {
   crypto: 'Kripto',
 };
 
+const DEFAULT_LIST_ID = 'default';
+
 let watchlist: WatchlistItem[] = [];
 let detachedIds: string[] = [];
 let expandedId: string | null = null;
+let lists: WatchlistList[] = [];
+let transactions: Transaction[] = [];
 
 const inputRefresh = document.getElementById('input-refresh') as HTMLInputElement;
 const inputStartup = document.getElementById('input-startup') as HTMLInputElement;
@@ -32,6 +37,9 @@ const viewModeOptions = document.getElementById('view-mode-options') as HTMLDivE
 const themeModeOptions = document.getElementById('theme-mode-options') as HTMLDivElement;
 const accentOptions = document.getElementById('accent-options') as HTMLDivElement;
 const watchlistManageEl = document.getElementById('watchlist-manage') as HTMLDivElement;
+const listsManageEl = document.getElementById('lists-manage') as HTMLDivElement;
+const inputNewListName = document.getElementById('input-new-list-name') as HTMLInputElement;
+const btnAddList = document.getElementById('btn-add-list') as HTMLButtonElement;
 const appVersionEl = document.getElementById('app-version') as HTMLSpanElement;
 const updateStatusTextEl = document.getElementById('update-status-text') as HTMLParagraphElement;
 const btnCheckUpdate = document.getElementById('btn-check-update') as HTMLButtonElement;
@@ -250,26 +258,158 @@ function buildAlarmGroup(title: string, hint: string, content: HTMLElement): HTM
   return group;
 }
 
+function buildTransactionsGroup(item: WatchlistItem, itemTxs: Transaction[], position: ComputedPosition | null): HTMLDivElement {
+  const content = document.createElement('div');
+
+  if (position) {
+    const realized = document.createElement('div');
+    realized.className = 'alarm-group-hint';
+    const sign = position.realizedPL > 0 ? '+' : '';
+    realized.textContent = `Gerceklesen K/Z: ${sign}${position.realizedPL.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} ${item.currency || ''}`;
+    content.appendChild(realized);
+  }
+
+  if (itemTxs.length > 0) {
+    const list = document.createElement('div');
+    list.className = 'transaction-list';
+    const sorted = [...itemTxs].sort((a, b) => b.date - a.date);
+    for (const tx of sorted) {
+      const row = document.createElement('div');
+      row.className = 'watchlist-manage-row';
+
+      const label = document.createElement('div');
+      label.className = 'row-main';
+      const dateStr = new Date(tx.date).toLocaleDateString('tr-TR');
+      label.textContent = `${dateStr} · ${tx.type === 'buy' ? 'Alis' : 'Satis'} · ${tx.quantity} @ ${tx.price}`;
+
+      const actions = document.createElement('div');
+      actions.className = 'manage-actions';
+      const removeBtn = document.createElement('button');
+      removeBtn.textContent = 'Sil';
+      removeBtn.className = 'danger';
+      removeBtn.addEventListener('click', async () => {
+        transactions = await window.miniTakip.removeTransaction(tx.id);
+        renderWatchlistManage();
+      });
+      actions.appendChild(removeBtn);
+
+      row.appendChild(label);
+      row.appendChild(actions);
+      list.appendChild(row);
+    }
+    content.appendChild(list);
+  }
+
+  const typeSelect = document.createElement('select');
+  const buyOpt = document.createElement('option');
+  buyOpt.value = 'buy';
+  buyOpt.textContent = 'Alis';
+  const sellOpt = document.createElement('option');
+  sellOpt.value = 'sell';
+  sellOpt.textContent = 'Satis';
+  typeSelect.appendChild(buyOpt);
+  typeSelect.appendChild(sellOpt);
+
+  const dateInput = document.createElement('input');
+  dateInput.type = 'date';
+  dateInput.value = new Date().toISOString().slice(0, 10);
+
+  const qtyTxInput = document.createElement('input');
+  qtyTxInput.type = 'number';
+  qtyTxInput.step = 'any';
+  qtyTxInput.placeholder = 'Adet';
+
+  const priceTxInput = document.createElement('input');
+  priceTxInput.type = 'number';
+  priceTxInput.step = 'any';
+  priceTxInput.placeholder = `Fiyat (${item.currency || 'birim'})`;
+
+  const formGrid = buildGridRow([
+    ['Tur', typeSelect],
+    ['Tarih', dateInput],
+    ['Adet', qtyTxInput],
+    ['Fiyat', priceTxInput],
+  ]);
+
+  const addBtn = document.createElement('button');
+  addBtn.textContent = 'Islem Ekle';
+  addBtn.className = 'save-detail';
+  addBtn.addEventListener('click', async () => {
+    const qty = parseFloat(qtyTxInput.value);
+    const price = parseFloat(priceTxInput.value);
+    if (!qty || qty <= 0 || !Number.isFinite(price) || price < 0) return;
+    const date = dateInput.value ? new Date(dateInput.value).getTime() : Date.now();
+    transactions = await window.miniTakip.addTransaction({
+      itemId: item.id,
+      type: typeSelect.value as 'buy' | 'sell',
+      quantity: qty,
+      price,
+      date,
+    });
+    qtyTxInput.value = '';
+    priceTxInput.value = '';
+    renderWatchlistManage();
+  });
+
+  content.appendChild(formGrid);
+  content.appendChild(addBtn);
+
+  return buildAlarmGroup(
+    'Islemler',
+    'Alim/satim gecmisi girerek adet ve ortalama maliyeti otomatik hesaplatabilirsiniz (yukaridaki alanlarin yerini alir).',
+    content
+  );
+}
+
 function buildDetailPanel(item: WatchlistItem): HTMLDivElement {
   const detail = document.createElement('div');
   detail.className = 'manage-detail';
+
+  const itemTxs = transactions.filter((t) => t.itemId === item.id);
+  const position = itemTxs.length > 0 ? computePosition(itemTxs) : null;
 
   const qtyInput = document.createElement('input');
   qtyInput.type = 'number';
   qtyInput.step = 'any';
   qtyInput.placeholder = 'Adet';
-  qtyInput.value = item.quantity != null ? String(item.quantity) : '';
+  qtyInput.value = position ? String(position.quantity) : item.quantity != null ? String(item.quantity) : '';
+  qtyInput.disabled = !!position;
 
   const costInput = document.createElement('input');
   costInput.type = 'number';
   costInput.step = 'any';
   costInput.placeholder = `Ort. maliyet (${item.currency || 'birim'})`;
-  costInput.value = item.costBasis != null ? String(item.costBasis) : '';
+  costInput.value = position ? String(position.avgCost) : item.costBasis != null ? String(item.costBasis) : '';
+  costInput.disabled = !!position;
 
   const portfolioGrid = buildGridRow([
     ['Adet', qtyInput],
     ['Ort. Maliyet', costInput],
   ]);
+  if (position) {
+    const note = document.createElement('div');
+    note.className = 'alarm-group-hint';
+    note.textContent = 'Bu degerler asagidaki islemlerden hesaplaniyor.';
+    portfolioGrid.appendChild(note);
+  }
+
+  const transactionsGroup = buildTransactionsGroup(item, itemTxs, position);
+
+  // Only shown once a second list actually exists, so single-list setups
+  // (the common case) don't get an extra control with nothing to choose.
+  let listSelect: HTMLSelectElement | null = null;
+  let listRow: HTMLDivElement | null = null;
+  if (lists.length > 1) {
+    listSelect = document.createElement('select');
+    for (const l of lists) {
+      const opt = document.createElement('option');
+      opt.value = l.id;
+      opt.textContent = l.name;
+      listSelect.appendChild(opt);
+    }
+    listSelect.value = item.listId ?? DEFAULT_LIST_ID;
+    listRow = buildGridRow([['Liste', listSelect]]);
+  }
 
   const aboveInput = document.createElement('input');
   aboveInput.type = 'number';
@@ -388,8 +528,9 @@ function buildDetailPanel(item: WatchlistItem): HTMLDivElement {
   saveBtn.addEventListener('click', async () => {
     const parse = (v: string) => (v.trim() === '' ? undefined : parseFloat(v));
     watchlist = await window.miniTakip.updateItem(item.id, {
-      quantity: parse(qtyInput.value),
-      costBasis: parse(costInput.value),
+      // While a transaction history exists, quantity/cost basis are derived
+      // (see above) and read-only, so they're left out of the save payload.
+      ...(position ? {} : { quantity: parse(qtyInput.value), costBasis: parse(costInput.value) }),
       alertAbove: parse(aboveInput.value),
       alertBelow: parse(belowInput.value),
       alertUpPercent: parse(upPctInput.value),
@@ -398,11 +539,14 @@ function buildDetailPanel(item: WatchlistItem): HTMLDivElement {
       alertRatioAbove: ratioTargetSelect.value ? parse(ratioAboveInput.value) : undefined,
       alertRatioBelow: ratioTargetSelect.value ? parse(ratioBelowInput.value) : undefined,
       color: colorEnable.checked ? colorInput.value : undefined,
+      ...(listSelect ? { listId: listSelect.value } : {}),
     });
     renderWatchlistManage();
   });
 
   detail.appendChild(portfolioGrid);
+  if (listRow) detail.appendChild(listRow);
+  detail.appendChild(transactionsGroup);
   detail.appendChild(priceGroup);
   detail.appendChild(pctGroup);
   detail.appendChild(ratioGroup);
@@ -410,6 +554,52 @@ function buildDetailPanel(item: WatchlistItem): HTMLDivElement {
   detail.appendChild(saveBtn);
   return detail;
 }
+
+function renderListsManage() {
+  listsManageEl.innerHTML = '';
+  for (const l of lists) {
+    const row = document.createElement('div');
+    row.className = 'watchlist-manage-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = l.name;
+    nameInput.className = 'list-name-input';
+    nameInput.addEventListener('change', async () => {
+      const name = nameInput.value.trim();
+      if (!name || name === l.name) {
+        nameInput.value = l.name;
+        return;
+      }
+      lists = await window.miniTakip.renameList(l.id, name);
+    });
+
+    const actions = document.createElement('div');
+    actions.className = 'manage-actions';
+    const removeBtn = document.createElement('button');
+    removeBtn.textContent = 'Sil';
+    removeBtn.className = 'danger';
+    removeBtn.disabled = l.id === DEFAULT_LIST_ID || lists.length <= 1;
+    removeBtn.title = removeBtn.disabled ? 'Varsayilan liste veya son liste silinemez' : 'Listeyi sil';
+    removeBtn.addEventListener('click', async () => {
+      lists = await window.miniTakip.removeList(l.id);
+      renderListsManage();
+    });
+    actions.appendChild(removeBtn);
+
+    row.appendChild(nameInput);
+    row.appendChild(actions);
+    listsManageEl.appendChild(row);
+  }
+}
+
+btnAddList.addEventListener('click', async () => {
+  const name = inputNewListName.value.trim();
+  if (!name) return;
+  lists = await window.miniTakip.addList(name);
+  inputNewListName.value = '';
+  renderListsManage();
+});
 
 function renderWatchlistManage() {
   watchlistManageEl.innerHTML = '';
@@ -621,21 +811,37 @@ window.miniTakip.onDetachedChanged((ids) => {
   renderWatchlistManage();
 });
 
+window.miniTakip.onListsChanged((updated) => {
+  lists = updated;
+  renderListsManage();
+  renderWatchlistManage();
+});
+
+window.miniTakip.onTransactionsChanged((updated) => {
+  transactions = updated;
+  renderWatchlistManage();
+});
+
 async function init() {
-  const [settings, wl, ids, version, user] = await Promise.all([
+  const [settings, wl, ids, version, user, ls, txs] = await Promise.all([
     window.miniTakip.getSettings(),
     window.miniTakip.getWatchlist(),
     window.miniTakip.getDetachedIds(),
     window.miniTakip.getAppVersion(),
     window.miniTakip.getAuthUser(),
+    window.miniTakip.getLists(),
+    window.miniTakip.getTransactions(),
   ]);
   watchlist = wl;
   detachedIds = ids;
+  lists = ls;
+  transactions = txs;
   appVersionEl.textContent = version;
   updateStatusTextEl.textContent = '-';
   renderGeneral(settings);
   document.body.classList.toggle('theme-light', settings.themeMode === 'light');
   if (settings.accentTheme !== 'blue') document.body.classList.add(`accent-${settings.accentTheme}`);
+  renderListsManage();
   renderWatchlistManage();
   renderAuth(user);
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
-    <title>Piyasamatik - Ayarlar</title>
+    <title>Piyasamatik.com - Ayarlar</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -21,6 +21,7 @@
         <button class="nav-item" data-section="appearance">Gorunum</button>
         <button class="nav-item" data-section="update">Guncelleme</button>
         <button class="nav-item" data-section="account">Hesap</button>
+        <button class="nav-item" data-section="lists">Listeler</button>
         <button class="nav-item" data-section="watchlist">Izleme Listesi</button>
         <button class="nav-item" data-section="alarm">Alarm</button>
         <button class="nav-item" data-section="feedback">Geri Bildirim</button>
@@ -179,6 +180,16 @@
             <button id="btn-google-signout" class="save-detail danger-action">Cikis Yap</button>
           </div>
           <p id="account-status-text" class="settings-hint"></p>
+        </section>
+
+        <section id="section-lists" class="settings-panel">
+          <h3>Listeler</h3>
+          <p class="settings-hint">Ogelerinizi birden fazla adlandirilmis listeye ayirabilirsiniz (orn. "Portfoyum", "Takip"). Birden fazla liste olustuduğunuzda ana pencerede bir liste secici belirir. Bir listeyi silerseniz icindeki ogeler varsayilan listeye tasinir.</p>
+          <div id="lists-manage"></div>
+          <div class="settings-row">
+            <input id="input-new-list-name" type="text" placeholder="Yeni liste adi" />
+            <button id="btn-add-list" class="save-detail">Ekle</button>
+          </div>
         </section>
 
         <section id="section-watchlist" class="settings-panel">

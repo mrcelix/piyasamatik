@@ -1,5 +1,6 @@
 import type { WatchlistItem, Quote, SearchResult, ItemCategory } from '../main/providers/types';
-import type { ViewMode, ThemeMode, AccentTheme } from '../main/store';
+import type { ViewMode, ThemeMode, AccentTheme, WatchlistList, Transaction } from '../main/store';
+import { computePosition } from '../main/position';
 import type { ConvertCode } from '../main/providers/truncgil';
 import type { NewsItem } from '../main/providers';
 import { formatPrice, formatChange, changeClass, CHART_ICON, MAGNET_ICON, NEWS_ICON, AUTOFIT_ICON, TRANSPARENT_ICON, getDirectionIndicator } from './format';
@@ -29,10 +30,15 @@ const VIEW_MODE_OPTIONS: { key: ViewMode; label: string }[] = [
   { key: 'heatmap', label: 'Isi Haritasi' },
 ];
 
+const DEFAULT_LIST_ID = 'default';
+
 let watchlist: WatchlistItem[] = [];
 let quotes: Record<string, Quote> = {};
 let sparklines: Record<string, number[]> = {};
 let detachedIds: string[] = [];
+let lists: WatchlistList[] = [];
+let activeListId: string = DEFAULT_LIST_ID;
+let transactions: Transaction[] = [];
 let activeFilter: ItemCategory | 'all' | 'favorites' = 'all';
 let draggedId: string | null = null;
 let convertCodesLoaded = false;
@@ -147,6 +153,26 @@ function requestAutofit() {
 
 function renderTabs() {
   tabsEl.innerHTML = '';
+
+  // Only shown once the user has actually created a second list, so a
+  // single-list setup (the common case) doesn't get extra chrome.
+  if (lists.length > 1) {
+    const listSelect = document.createElement('select');
+    listSelect.className = 'category-select';
+    listSelect.title = 'Liste';
+    for (const l of lists) {
+      const opt = document.createElement('option');
+      opt.value = l.id;
+      opt.textContent = l.name;
+      listSelect.appendChild(opt);
+    }
+    listSelect.value = activeListId;
+    listSelect.addEventListener('change', () => {
+      activeListId = listSelect.value;
+      render();
+    });
+    tabsEl.appendChild(listSelect);
+  }
 
   const favBtn = document.createElement('button');
   favBtn.textContent = '★ Favoriler';
@@ -343,11 +369,23 @@ function buildRow(item: WatchlistItem): HTMLDivElement {
     right.appendChild(priceRow);
     right.appendChild(change);
 
-    if (quote && item.quantity && item.costBasis != null) {
-      const currentValue = item.quantity * quote.price;
-      const costValue = item.quantity * item.costBasis;
-      const pl = currentValue - costValue;
-      const plPct = costValue !== 0 ? (pl / costValue) * 100 : null;
+    // If transactions exist for this item, they're the source of truth for
+    // quantity/cost basis (average-cost method); otherwise fall back to the
+    // manually-typed fields, unchanged from before transactions existed.
+    const itemTxs = transactions.filter((t) => t.itemId === item.id);
+    const position = itemTxs.length > 0 ? computePosition(itemTxs) : null;
+    const effectiveQty = position ? position.quantity : item.quantity;
+    const effectiveCost = position ? position.avgCost : item.costBasis;
+
+    if (quote && effectiveQty && effectiveCost != null) {
+      const currentValue = effectiveQty * quote.price;
+      const costValue = effectiveQty * effectiveCost;
+      const unrealizedPL = currentValue - costValue;
+      // Realized P/L (from past sells, average-cost method) only exists once
+      // an item has an actual transaction ledger; manual qty/cost entries
+      // have no sell history to realize anything from.
+      const pl = unrealizedPL + (position?.realizedPL ?? 0);
+      const plPct = costValue !== 0 ? (unrealizedPL / costValue) * 100 : null;
       const plEl = document.createElement('div');
       plEl.className = `row-pl ${changeClass(pl === 0 ? 0 : pl)}`;
       const sign = pl > 0 ? '+' : '';
@@ -431,10 +469,36 @@ function buildHeatTile(item: WatchlistItem): HTMLDivElement {
   return tile;
 }
 
+// Isi Haritasi orders tiles by daily change (highest first) so the biggest
+// movers stay at a glance, but re-sorting on every quote tick would make
+// tiles constantly jump around; instead the order is snapshotted and only
+// recomputed every 5 minutes (see HEATMAP_RESORT_INTERVAL_MS below).
+let heatmapSortedOrder: string[] | null = null;
+const HEATMAP_RESORT_INTERVAL_MS = 5 * 60 * 1000;
+
+function computeHeatmapOrder(): string[] {
+  return [...watchlist]
+    .filter((i) => quotes[i.id] && !quotes[i.id].error)
+    .sort((a, b) => (quotes[b.id].changePercent ?? -Infinity) - (quotes[a.id].changePercent ?? -Infinity))
+    .map((i) => i.id);
+}
+
+function refreshHeatmapOrder() {
+  heatmapSortedOrder = computeHeatmapOrder();
+  if (currentViewMode === 'heatmap') render();
+}
+
+setInterval(refreshHeatmapOrder, HEATMAP_RESORT_INTERVAL_MS);
+
 function renderHeatmap(visible: WatchlistItem[]) {
+  if (!heatmapSortedOrder) heatmapSortedOrder = computeHeatmapOrder();
+  const orderIndex = new Map(heatmapSortedOrder.map((id, i) => [id, i]));
+  const ordered = [...visible].sort(
+    (a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity)
+  );
   const grid = document.createElement('div');
   grid.className = 'heat-grid';
-  for (const item of visible) grid.appendChild(buildHeatTile(item));
+  for (const item of ordered) grid.appendChild(buildHeatTile(item));
   listEl.appendChild(grid);
 }
 
@@ -452,10 +516,11 @@ function render() {
     return;
   }
 
+  const inActiveList = watchlist.filter((i) => (i.listId ?? DEFAULT_LIST_ID) === activeListId);
   let visible: WatchlistItem[];
-  if (activeFilter === 'all') visible = watchlist;
-  else if (activeFilter === 'favorites') visible = watchlist.filter((i) => i.favorite);
-  else visible = watchlist.filter((i) => i.category === activeFilter);
+  if (activeFilter === 'all') visible = inActiveList;
+  else if (activeFilter === 'favorites') visible = inActiveList.filter((i) => i.favorite);
+  else visible = inActiveList.filter((i) => i.category === activeFilter);
 
   if (visible.length === 0) {
     const empty = document.createElement('div');
@@ -463,9 +528,11 @@ function render() {
     empty.textContent =
       watchlist.length === 0
         ? 'Izleme listeniz bos. Eklemek icin + butonuna basin.'
-        : activeFilter === 'favorites'
-          ? 'Henuz favori eklemediniz.'
-          : 'Bu kategoride oge yok.';
+        : inActiveList.length === 0
+          ? 'Bu listede oge yok.'
+          : activeFilter === 'favorites'
+            ? 'Henuz favori eklemediniz.'
+            : 'Bu kategoride oge yok.';
     listEl.appendChild(empty);
     return;
   }
@@ -560,6 +627,18 @@ window.miniTakip.onWatchlistChanged((updated) => {
 
 window.miniTakip.onDetachedChanged((ids) => {
   detachedIds = ids;
+  render();
+});
+
+window.miniTakip.onListsChanged((updated) => {
+  lists = updated;
+  if (!lists.some((l) => l.id === activeListId)) activeListId = lists[0]?.id ?? DEFAULT_LIST_ID;
+  renderTabs();
+  render();
+});
+
+window.miniTakip.onTransactionsChanged((updated) => {
+  transactions = updated;
   render();
 });
 
@@ -728,6 +807,7 @@ function renderSearchResults(results: SearchResult[]) {
         symbol: res.symbol,
         label: res.label,
         currency: res.currency,
+        listId: activeListId,
       });
       const newItem = watchlist[watchlist.length - 1];
       render();
@@ -844,15 +924,20 @@ document.getElementById('btn-refresh-news')!.addEventListener('click', () => {
 });
 
 async function init() {
-  const [wl, ids, settings, sparks] = await Promise.all([
+  const [wl, ids, settings, sparks, ls, txs] = await Promise.all([
     window.miniTakip.getWatchlist(),
     window.miniTakip.getDetachedIds(),
     window.miniTakip.getSettings(),
     window.miniTakip.getSparklines(),
+    window.miniTakip.getLists(),
+    window.miniTakip.getTransactions(),
   ]);
   watchlist = wl;
   detachedIds = ids;
   sparklines = sparks;
+  lists = ls;
+  transactions = txs;
+  if (!lists.some((l) => l.id === activeListId)) activeListId = lists[0]?.id ?? DEFAULT_LIST_ID;
   applyViewMode(settings.viewMode);
   applyTheme(settings.themeMode);
   applyAccentTheme(settings.accentTheme);

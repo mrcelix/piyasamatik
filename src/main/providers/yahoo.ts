@@ -104,7 +104,11 @@ export async function searchYahoo(query: string): Promise<SearchResult[]> {
         category: mapQuoteType(qt.quoteType),
         symbol: qt.symbol,
         label: qt.shortname ?? qt.longname ?? qt.symbol,
-        currency: 'USD',
+        // Search results don't include a currency field; the actual quote
+        // (fetched separately once added) always reads the real currency
+        // from Yahoo's chart endpoint, so this is only a display heuristic
+        // for the search list itself. Istanbul-listed symbols trade in TRY.
+        currency: qt.exchange === 'IST' ? 'TRY' : 'USD',
         sub: qt.exchDisp ?? qt.exchange,
       }));
   } catch {
