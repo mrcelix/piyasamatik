@@ -4,6 +4,9 @@ import { computePosition } from '../main/position';
 import type { ConvertCode } from '../main/providers/truncgil';
 import type { NewsItem } from '../main/providers';
 import { formatPrice, formatChange, changeClass, CHART_ICON, MAGNET_ICON, NEWS_ICON, AUTOFIT_ICON, TRANSPARENT_ICON, getDirectionIndicator } from './format';
+import { installErrorReporting } from './errorReporting';
+
+installErrorReporting('main-window');
 
 const CATEGORY_LABEL: Record<ItemCategory, string> = {
   currency: 'Doviz',
@@ -11,6 +14,7 @@ const CATEGORY_LABEL: Record<ItemCategory, string> = {
   stock: 'Hisse',
   index: 'Endeks',
   crypto: 'Kripto',
+  fund: 'Yatirim Fonu',
 };
 
 const CATEGORY_OPTIONS: { key: ItemCategory; label: string }[] = [
@@ -19,6 +23,7 @@ const CATEGORY_OPTIONS: { key: ItemCategory; label: string }[] = [
   { key: 'stock', label: 'Hisse' },
   { key: 'index', label: 'Endeks' },
   { key: 'crypto', label: 'Kripto' },
+  { key: 'fund', label: 'Yatirim Fonu' },
 ];
 
 const VIEW_MODE_OPTIONS: { key: ViewMode; label: string }[] = [
@@ -46,6 +51,7 @@ let magnetEnabled = true;
 let autofitEnabled = true;
 let transparentEnabled = false;
 let gridShowCategory = false;
+let heatmapSortByPercent = true;
 let newsLoaded = false;
 const lastPrices: Record<string, number> = {};
 let directions: Record<string, { html: string; cls: string }> = {};
@@ -491,11 +497,12 @@ function refreshHeatmapOrder() {
 setInterval(refreshHeatmapOrder, HEATMAP_RESORT_INTERVAL_MS);
 
 function renderHeatmap(visible: WatchlistItem[]) {
-  if (!heatmapSortedOrder) heatmapSortedOrder = computeHeatmapOrder();
-  const orderIndex = new Map(heatmapSortedOrder.map((id, i) => [id, i]));
-  const ordered = [...visible].sort(
-    (a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity)
-  );
+  let ordered = visible;
+  if (heatmapSortByPercent) {
+    if (!heatmapSortedOrder) heatmapSortedOrder = computeHeatmapOrder();
+    const orderIndex = new Map(heatmapSortedOrder.map((id, i) => [id, i]));
+    ordered = [...visible].sort((a, b) => (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity));
+  }
   const grid = document.createElement('div');
   grid.className = 'heat-grid';
   for (const item of ordered) grid.appendChild(buildHeatTile(item));
@@ -644,6 +651,7 @@ window.miniTakip.onTransactionsChanged((updated) => {
 
 window.miniTakip.onSettingsChanged((settings) => {
   const viewModeChanged = settings.viewMode !== currentViewMode;
+  const heatmapSortChanged = settings.heatmapSortByPercent !== heatmapSortByPercent;
   applyViewMode(settings.viewMode);
   applyTheme(settings.themeMode);
   applyAccentTheme(settings.accentTheme);
@@ -654,7 +662,8 @@ window.miniTakip.onSettingsChanged((settings) => {
   transparentEnabled = settings.transparentEnabled;
   applyTransparentButton();
   applyGridShowCategory(settings.gridShowCategory);
-  if (viewModeChanged) {
+  heatmapSortByPercent = settings.heatmapSortByPercent;
+  if (viewModeChanged || heatmapSortChanged) {
     renderTabs();
     render();
   } else if (autofitEnabled) requestAutofit();
@@ -948,6 +957,7 @@ async function init() {
   transparentEnabled = settings.transparentEnabled;
   applyTransparentButton();
   applyGridShowCategory(settings.gridShowCategory);
+  heatmapSortByPercent = settings.heatmapSortByPercent;
   renderTabs();
   renderStatusBar();
   render();

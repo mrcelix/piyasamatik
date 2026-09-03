@@ -25,6 +25,14 @@ npm run dev
 
 (Bu build.js'i --watch modunda calistirir; ayri bir terminalde `electron .` calistirmaniz gerekir.)
 
+## Testler
+
+```bash
+npm test
+```
+
+Vitest ile calisan birim testleri (pozisyon/kar-zarar hesabi, SMA/RSI teknik gostergeleri, alarm esik mantigi, Truncgil sayi ayristirma). `main` dalina yapilan her push/PR'da `.github/workflows/ci.yml` uzerinden otomatik calisir (tip kontrolu dahil); yayinlama (release) is akisindan bagimsizdir.
+
 ## Windows kurulum paketi olusturma
 
 ```bash
@@ -32,6 +40,34 @@ npm run pack
 ```
 
 `electron-builder` ile `dist/` altinda bir NSIS kurulum programı (.exe) uretir. Ilk calistirmada electron-builder gerekli Windows araclarini (winCodeSign vb.) indirir; internet baglantisi gerekir.
+
+### Kod imzalama (Azure Trusted Signing) — henuz aktif degil, kurulum bekliyor
+
+Su anda kurulum dosyasi imzasizdir (build loglarinda "no signing info identified, signing is skipped" gorulur), bu yuzden Windows SmartScreen ilk calistirmada uyari gosterir. Bunu Azure Trusted Signing (Microsoft'un bulut tabanli imzalama servisi) ile cozmek icin gereken adimlar asagida — bunlarin hepsi sizin Azure hesabinizda yapmaniz gereken, benim yapamayacagim adimlardir (kimlik dogrulama gunler surebilir):
+
+1. Azure Portal'da: abonelik > Resource providers > `Microsoft.CodeSigning`'i kaydedin (Register).
+2. "Artifact Signing Accounts" (eski adiyla Trusted Signing) kaynagi olusturun — bolge (orn. West Europe) ve **Basic** katman (ayda 5000 imza, aylik ~$9.99 — bu proje icin fazlasiyla yeterli).
+3. Kimlik dogrulamasini **Public Trust** olarak yapin (genel kullanima acik masaustu uygulamasi oldugu icin; Private Trust sadece kurum-ici uygulamalar icindir ve genel guven zincirinde gecerli olmaz). Bireysel basvuru ABD/Kanada ile sinirlidir; kurumsal basvurunun kapsami daha genistir.
+4. Kimlik dogrulamasi tamamlaninca, ona bagli bir **Certificate Profile** (Public Trust turunde) olusturun.
+5. Bir Azure AD App Registration olusturun, bir client secret uretin, ve bu uygulamaya Certificate Profile (veya hesabin tamami) uzerinde **"Artifact Signing Certificate Profile Signer"** rolunu atayin (Access control (IAM)).
+6. GitHub reponuza (Settings > Secrets and variables > Actions) su 3 secret'i ekleyin: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`.
+
+Bu adimlar tamamlaninca bana haber verin: `package.json` > `build.win`'e asagidaki gibi bir `azureSignOptions` blogu eklenip (hesap/profil adlarinizla), `.github/workflows/release.yml`'deki `npm run release` adimina `AZURE_TENANT_ID`/`AZURE_CLIENT_ID`/`AZURE_CLIENT_SECRET` ortam degiskenleri eklenerek imzalama devreye alinabilir (electron-builder bunu yerlesik olarak destekler, ek bir GitHub Action gerekmez):
+
+```json
+"win": {
+  "target": "nsis",
+  "icon": "assets/icon.png",
+  "azureSignOptions": {
+    "publisherName": "CN=Adiniz Soyadiniz, O=Kurulusunuz, C=US",
+    "endpoint": "https://weu.codesigning.azure.net/",
+    "codeSigningAccountName": "hesap-adiniz",
+    "certificateProfileName": "profil-adiniz"
+  }
+}
+```
+
+Bu blogu simdi eklemiyorum, cunku Azure kimlik bilgileri henuz mevcut degilken CI'a eklenirse zaten kirilgan olan yayinlama (release) sureci bozulabilir; secret'lar hazir olunca birlikte aktif hale getirecegiz.
 
 ## Otomatik guncelleme (GitHub Releases)
 
@@ -97,7 +133,30 @@ create policy "Anyone can submit feedback" on public.feedback
   for insert with check (true);
 ```
 
-3. Supabase Dashboard > Authentication > Providers > Google'i etkinlestirin. Bunun icin bir Google Cloud projesinde OAuth Client ID/Secret olusturup (Google Cloud Console > APIs & Services > Credentials), Authorized redirect URI olarak Supabase'in kendi callback adresini eklemeniz gerekir: `https://<proje-id>.supabase.co/auth/v1/callback` (bu adres, Supabase'in size Google provider ayarlari sayfasinda gosterdigi adresle ayni olmalidir). Client ID/Secret'i Supabase'deki Google provider ayarlarina yapistirin.
+3. **Cokme/hata raporlama** (Ayarlar > Genel > "Cokme/hata raporlarini otomatik gonder") icin ayrica su tabloyu olusturun (feedback tablosuyla ayni mantik: insert herkese acik, okuma/degistirme kapali):
+
+```sql
+create table if not exists public.error_reports (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid references auth.users(id) on delete set null,
+  source text not null,
+  message text not null,
+  stack text,
+  context text,
+  app_version text,
+  platform text,
+  created_at timestamptz not null default now()
+);
+
+alter table public.error_reports enable row level security;
+
+create policy "Anyone can submit error reports" on public.error_reports
+  for insert with check (true);
+```
+
+Bu tablo olusturulana kadar hata raporlama denemeleri sessizce basarisiz olur (uygulama bunu yutar, kullaniciya bir sey gostermez) — ozellik calisir ama hicbir kayit Supabase'e ulasmaz.
+
+4. Supabase Dashboard > Authentication > Providers > Google'i etkinlestirin. Bunun icin bir Google Cloud projesinde OAuth Client ID/Secret olusturup (Google Cloud Console > APIs & Services > Credentials), Authorized redirect URI olarak Supabase'in kendi callback adresini eklemeniz gerekir: `https://<proje-id>.supabase.co/auth/v1/callback` (bu adres, Supabase'in size Google provider ayarlari sayfasinda gosterdigi adresle ayni olmalidir). Client ID/Secret'i Supabase'deki Google provider ayarlarina yapistirin.
 
 Bu iki adim tamamlanmadan "Google ile Giris Yap" butonu "provider is not enabled" hatasi verir (bu, uygulamadaki bir hata degil, henuz tamamlanmamis bir kurulum adimidir).
 
@@ -108,12 +167,13 @@ Bu iki adim tamamlanmadan "Google ile Giris Yap" butonu "provider is not enabled
 - **Doviz & altin (TRY)**: `finans.truncgil.com/today.json` — USD/EUR/... kurlari ve gram/ceyrek/yarim/tam/cumhuriyet/resat/hamit altin, ons altin, gumus, platin.
 - **Hisseler & endeksler (ABD ve Borsa Istanbul dahil)**: Yahoo Finance'in resmi olmayan `query1.finance.yahoo.com` chart ve search uc noktalari (key gerekmez, ancak Yahoo bu uc noktalari degistirebilir/rate limit uygulayabilir). BIST hisseleri arama kutusuna sirket adi/kodu yazilarak bulunabilir (orn. "THYAO", "GARAN", "ASELS") — Yahoo bunlari `.IS` uzantili sembol olarak, TRY cinsinden fiyatla dondurur; gecmis grafik ve sparkline da diger hisseler gibi calisir.
 - **Kripto paralar**: CoinGecko public API (`api.coingecko.com`), fiyat ve arama icin.
+- **Yatirim fonlari (TEFAS)**: `tefas.gov.tr`'nin kendi Next.js sitesinin ic (resmi olmayan) JSON uc noktalari (`/api/funds/fonGetiriBazliBilgiGetir` fon listesi/arama icin, `/api/funds/fonFiyatBilgiGetir` fiyat ve gecmis icin). Fon fiyatlari (NAV) Turkiye'de gunde bir kez (is gunu sonunda) yayinlandigindan, bu kategori icin fiyatlar saatte bir kez yenilenir (diger kategoriler gibi her yenileme araliginda degil) — bu normaldir, hata degildir. BES (Bireysel Emeklilik Sistemi) fonlari icin ucretsiz/kararli bir JSON uc noktasi bulunamadi (EGM/BEFAS sitesi taranmis ancak calisan bir API tespit edilemedi); bu yuzden BES fonlari su an desteklenmiyor.
 
 Bu servisler resmi/dokumante edilmemis veya rate-limit'e tabi olabilir; uzun vadeli kullanimda bir servis calismazsa ilgili saglayici modulu (`src/main/providers/`) guncellenmesi gerekebilir.
 
 ## Ogeekleme
 
-Sag ust `+` butonuna basip arama kutusuna sembol veya isim yazarak (ornek: `USD`, `gram altin`, `AAPL`, `bitcoin`, `S&P`) doviz, altin/emtia, ABD hisse/endeks ve kripto kategorilerinin tamami ayni arama sonucu listesinde gelir; sonuca tiklamak izleme listesine ekler. Her satirin uzerine gelince cikan kirmizi `x` ile listeden kaldirilir.
+Sag ust `+` butonuna basip arama kutusuna sembol veya isim yazarak (ornek: `USD`, `gram altin`, `AAPL`, `bitcoin`, `S&P`, `TCD` veya bir fon adi) doviz, altin/emtia, ABD hisse/endeks, kripto ve TEFAS yatirim fonu kategorilerinin tamami ayni arama sonucu listesinde gelir; sonuca tiklamak izleme listesine ekler. Her satirin uzerine gelince cikan kirmizi `x` ile listeden kaldirilir.
 
 ## Ayri pencereler (mini widget'lar)
 
@@ -131,17 +191,18 @@ Ana pencerenin dis bardaki disli (⚙) simgesinden Ayarlar penceresi acilir; bur
 - **Izgara** (varsayilan): sabit 120px genislikte, otomatik satirlara bolunen kart gorunumu; kategori etiketi (DOVIZ, HISSE, ...) varsayilan olarak gizlidir, Ayarlar > Gorunum'den acilabilir. Ana pencerenin varsayilan genisligi (390px), ilk acilista tam olarak 3 kart yan yana sigacak sekilde ayarlanmistir (pencere yine de serbestce yeniden boyutlandirilabilir).
 - **Tablo**: tek satirlik, yatay hizali sutunlar (rakip uygulamalardaki klasik piyasa tablosu gorunumu)
 - **Kayan Serit**: bu secim ana pencerede degil, ayri, ince ve her zaman ustte kalan bir "kayan serit" penceresinde acilir (klasik borsa bandi gibi) — tum ogeleri fiyat + degisim ile yatayda kaydirir (uzerine gelince kayma durur). Ana pencerenin kendi listesi bu modda bos kalir, sadece serit penceresinin acildigini belirtir. Serit penceresi kapatilirsa gorunum otomatik olarak Izgara'ya doner; konum/boyutu `settings.json` icinde `tickerWindowBounds` altinda hatirlanir.
-- **Isi Haritasi**: her ogenin degisim yuzdesine gore yesil/kirmizi renk yogunlugunda karolar (Finviz benzeri). Karolar gunluk degisim yuzdesine gore en yuksekten en dusuge siralanir; bu siralama fiyat guncellemelerinde surekli degismez, sadece 5 dakikada bir yeniden hesaplanir (aksi halde karolar surekli yer degistirir).
+- **Isi Haritasi**: her ogenin degisim yuzdesine gore yesil/kirmizi renk yogunlugunda karolar (Finviz benzeri). Varsayilan olarak karolar gunluk degisim yuzdesine gore en yuksekten en dusuge siralanir (bu moddayken sag tik menusunde beliren **"Yuzdeye Gore Sirala"** onay kutusundan kapatilabilir, kapatilinca karolar normal izleme listesi sirasinda gorunur). Siralama fiyat guncellemelerinde surekli degismez, sadece 5 dakikada bir yeniden hesaplanir (aksi halde karolar surekli yer degistirir).
 
 ## Ayarlar penceresi (mega-menu)
 
 Ana pencere basligindaki disli simgesinden acilir. Sol tarafta bir menu ile gruplara ayrilmistir:
-- **Genel**: yenileme araligi, Windows ile baslatma, sistem tepsisi simgesi acik/kapali, genel kisayol (`Ctrl+Shift+M`) acik/kapali
+- **Genel**: yenileme araligi, Windows ile baslatma, sistem tepsisi simgesi acik/kapali, genel kisayol (`Ctrl+Shift+M`) acik/kapali, cokme/hata raporlarini otomatik gonderme acik/kapali (varsayilan: acik — beklenmeyen bir hata olustugunda hata mesaji, surum ve platform bilgisi anonim olarak Supabase'e gonderilir; izleme listesi icerigi veya kisisel veri paylasilmaz)
 - **Pencereler**: ana pencereyi / mini pencereleri ayri ayri her zaman ustte tutma, miknatis, otomatik sigdir, saydam pencereler ve saydamlik orani (%40-%100)
 - **Gorunum**: gorunum modu (Liste/Kompakt/Izgara/Tablo/Kayan Serit/Isi Haritasi), Izgara'da kategori etiketini goster/gizle, tema (Koyu/Acik), renk sablonu (Mavi/Altin/Yesil/Kirmizi/Mor vurgu rengi)
 - **Guncelleme**: surum bilgisi, manuel guncelleme kontrolu (otomatik kontrol/indirme/kurulum zaten arka planda calisir)
 - **Hesap**: Google ile giris/cikis, bulut senkronizasyon durumu
 - **Izleme Listesi**: her oge icin "Detay" altinda portfoy (adet + ortalama maliyet), Fiyat alarmi (ustu/alti), Yuzde alarmi (gunluk % artis/azalis) ve Oran alarmi (baska bir izlenen ogeyle karsilastirma), ayri pencerede goster/kapat, favori, listeden kaldir
+- **Portfoy**: adet/maliyet bilgisi girilmis (islem defteri veya manuel) tum ogelerin para birimine gore gruplanmis ozeti (guncel deger, maliyet, gerceklesmemis/gerceklesen K/Z, % getiri — farkli para birimleri asla birlikte toplanmaz); ayrica izleme listenizden sectiginiz bir ogeyi (orn. USD, altin, bir hisse/endeks) "benchmark" olarak secip, portfoyunuzun maliyet bazli getirisini o ogenin sectiginiz donemdeki fiyat degisimiyle karsilastiran yaklasik bir metin sunar (portfoy getirisi ilk alim tarihinden bu yana, benchmark getirisi ise secilen sabit donem oldugundan tam bir zaman-agirlikli karsilastirma degildir)
 - **Alarm**: izlenen tum ogelere birden uygulanan genel gunluk % artis/azalis alarmi
 - **Geri Bildirim**: oneri, hata bildirimi veya istek yazip gonderme (Supabase'e kaydedilir; giris yapmis kullanicilar icin hesap/e-posta otomatik eklenir, giris yapmamis kullanicilar da e-posta alanini bos birakip anonim gonderebilir)
 

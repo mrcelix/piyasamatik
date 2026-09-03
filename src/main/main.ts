@@ -42,6 +42,12 @@ import {
 import type { Quote, WatchlistItem } from './providers/types';
 import { registerForSnapping, clampToVisibleDisplay } from './windows';
 import { computePosition } from './position';
+import { evaluateItemAlerts, evaluateGlobalAlert, defaultAlertState, type AlertState, type GlobalAlertState } from './alerts';
+import { installGlobalCrashHandlers, reportError, setCrashReportingEnabled } from './crashReporter';
+import { recordSnapshots, getStoredHistory } from './priceHistory';
+import { computeItemValuation, groupValuationsByCurrency, type CurrencyGroupSummary } from './portfolio';
+
+installGlobalCrashHandlers();
 import {
   signInWithGoogle,
   signUpWithEmail,
@@ -97,18 +103,8 @@ let quotesAtHide: Map<string, Quote> | null = null;
 const AWAY_SUMMARY_MIN_HIDDEN_MS = 60_000;
 const AWAY_SUMMARY_MIN_MOVE_PCT = 0.1;
 const AWAY_SUMMARY_MAX_ITEMS = 3;
-const alertState = new Map<
-  string,
-  {
-    aboveFired: boolean;
-    belowFired: boolean;
-    upPctFired: boolean;
-    downPctFired: boolean;
-    ratioAboveFired: boolean;
-    ratioBelowFired: boolean;
-  }
->();
-const globalAlertState = new Map<string, { upFired: boolean; downFired: boolean }>();
+const alertState = new Map<string, AlertState>();
+const globalAlertState = new Map<string, GlobalAlertState>();
 
 let currentUser: AuthUser | null = null;
 let cloudPushTimer: NodeJS.Timeout | null = null;
@@ -137,6 +133,7 @@ migrateUserDataFromOldProductName();
 app.setAppUserModelId('com.mustafacelik.piyasamatik');
 
 const settings: Settings = loadSettings();
+setCrashReportingEnabled(settings.crashReportingEnabled);
 let watchlist: WatchlistItem[] = loadWatchlist();
 let lists: WatchlistList[] = loadLists();
 let transactions: Transaction[] = loadTransactions();
@@ -670,7 +667,22 @@ function buildContextMenu(win: BrowserWindow): Menu {
       { label: 'Oge Ekle', click: () => mainWindow?.webContents.send('menu-action', 'open-add') },
       { label: 'Kur Cevirici', click: () => mainWindow?.webContents.send('menu-action', 'open-convert') },
       { label: 'Piyasa Haberleri', click: () => mainWindow?.webContents.send('menu-action', 'open-news') },
-      { type: 'separator' },
+      { type: 'separator' }
+    );
+    // Only relevant in Isi Haritasi, so it's not clutter in the other view modes.
+    if (settings.viewMode === 'heatmap') {
+      items.push({
+        label: 'Yuzdeye Gore Sirala',
+        type: 'checkbox',
+        checked: settings.heatmapSortByPercent,
+        click: () => {
+          settings.heatmapSortByPercent = !settings.heatmapSortByPercent;
+          saveSettings(settings);
+          broadcastSettings();
+        },
+      });
+    }
+    items.push(
       {
         label: 'Miknatis',
         type: 'checkbox',
@@ -803,10 +815,6 @@ function fireAlertNotification(item: WatchlistItem, body: string) {
   notif.show();
 }
 
-function formatAlertPct(v: number): string {
-  return `${v > 0 ? '+' : ''}${v.toFixed(2)}%`;
-}
-
 function checkAlerts() {
   for (const item of watchlist) {
     const quote = latestQuotes.get(item.id);
@@ -819,104 +827,29 @@ function checkAlerts() {
       item.alertDownPercent != null ||
       (item.alertRatioTargetId != null && (item.alertRatioAbove != null || item.alertRatioBelow != null));
     if (hasPerItemAlert) {
-      const state =
-        alertState.get(item.id) ??
-        {
-          aboveFired: false,
-          belowFired: false,
-          upPctFired: false,
-          downPctFired: false,
-          ratioAboveFired: false,
-          ratioBelowFired: false,
-        };
-
-      if (item.alertAbove != null) {
-        if (quote.price >= item.alertAbove && !state.aboveFired) {
-          state.aboveFired = true;
-          fireAlertNotification(item, `${quote.price} ${quote.currency} (hedef: ${item.alertAbove} uzeri)`);
-        } else if (quote.price < item.alertAbove) {
-          state.aboveFired = false;
-        }
-      }
-      if (item.alertBelow != null) {
-        if (quote.price <= item.alertBelow && !state.belowFired) {
-          state.belowFired = true;
-          fireAlertNotification(item, `${quote.price} ${quote.currency} (hedef: ${item.alertBelow} alti)`);
-        } else if (quote.price > item.alertBelow) {
-          state.belowFired = false;
-        }
-      }
-      if (item.alertUpPercent != null && quote.changePercent != null) {
-        if (quote.changePercent >= item.alertUpPercent && !state.upPctFired) {
-          state.upPctFired = true;
-          fireAlertNotification(item, `${formatAlertPct(quote.changePercent)} degisim (hedef: +%${item.alertUpPercent} artis)`);
-        } else if (quote.changePercent < item.alertUpPercent) {
-          state.upPctFired = false;
-        }
-      }
-      if (item.alertDownPercent != null && quote.changePercent != null) {
-        if (quote.changePercent <= -item.alertDownPercent && !state.downPctFired) {
-          state.downPctFired = true;
-          fireAlertNotification(item, `${formatAlertPct(quote.changePercent)} degisim (hedef: -%${item.alertDownPercent} azalis)`);
-        } else if (quote.changePercent > -item.alertDownPercent) {
-          state.downPctFired = false;
-        }
-      }
-      if (item.alertRatioTargetId != null) {
-        const targetItem = watchlist.find((i) => i.id === item.alertRatioTargetId);
-        const targetQuote = latestQuotes.get(item.alertRatioTargetId);
-        if (targetItem && targetQuote && !targetQuote.error && targetQuote.price !== 0) {
-          const ratio = quote.price / targetQuote.price;
-          if (item.alertRatioAbove != null) {
-            if (ratio >= item.alertRatioAbove && !state.ratioAboveFired) {
-              state.ratioAboveFired = true;
-              fireAlertNotification(
-                item,
-                `Oran ${ratio.toFixed(4)} (hedef: ${item.label}/${targetItem.label} orani ${item.alertRatioAbove} uzeri)`
-              );
-            } else if (ratio < item.alertRatioAbove) {
-              state.ratioAboveFired = false;
-            }
-          }
-          if (item.alertRatioBelow != null) {
-            if (ratio <= item.alertRatioBelow && !state.ratioBelowFired) {
-              state.ratioBelowFired = true;
-              fireAlertNotification(
-                item,
-                `Oran ${ratio.toFixed(4)} (hedef: ${item.label}/${targetItem.label} orani ${item.alertRatioBelow} alti)`
-              );
-            } else if (ratio > item.alertRatioBelow) {
-              state.ratioBelowFired = false;
-            }
-          }
-        }
-      }
+      const targetItem = item.alertRatioTargetId ? watchlist.find((i) => i.id === item.alertRatioTargetId) : undefined;
+      const targetQuote = item.alertRatioTargetId ? latestQuotes.get(item.alertRatioTargetId) : undefined;
+      const { state, events } = evaluateItemAlerts(
+        item,
+        quote,
+        alertState.get(item.id) ?? defaultAlertState(),
+        targetItem && targetQuote ? { item: targetItem, quote: targetQuote } : undefined
+      );
       alertState.set(item.id, state);
+      for (const event of events) fireAlertNotification(item, event.message);
     }
 
     // Global rule: a single up/down percent threshold applied to every item,
     // independent of and in addition to any per-item alarms above.
-    if (settings.globalAlert.enabled && quote.changePercent != null) {
-      const gstate = globalAlertState.get(item.id) ?? { upFired: false, downFired: false };
-      const { upPercent, downPercent } = settings.globalAlert;
-
-      if (upPercent != null) {
-        if (quote.changePercent >= upPercent && !gstate.upFired) {
-          gstate.upFired = true;
-          fireAlertNotification(item, `Genel alarm: ${formatAlertPct(quote.changePercent)} (esik: +%${upPercent})`);
-        } else if (quote.changePercent < upPercent) {
-          gstate.upFired = false;
-        }
-      }
-      if (downPercent != null) {
-        if (quote.changePercent <= -downPercent && !gstate.downFired) {
-          gstate.downFired = true;
-          fireAlertNotification(item, `Genel alarm: ${formatAlertPct(quote.changePercent)} (esik: -%${downPercent})`);
-        } else if (quote.changePercent > -downPercent) {
-          gstate.downFired = false;
-        }
-      }
-      globalAlertState.set(item.id, gstate);
+    if (settings.globalAlert.enabled) {
+      const { state, events } = evaluateGlobalAlert(
+        quote.changePercent,
+        globalAlertState.get(item.id) ?? { upFired: false, downFired: false },
+        settings.globalAlert.upPercent,
+        settings.globalAlert.downPercent
+      );
+      globalAlertState.set(item.id, state);
+      for (const event of events) fireAlertNotification(item, event.message);
     }
   }
 }
@@ -928,6 +861,7 @@ async function refreshQuotes() {
     latestQuotes = await fetchQuotesForWatchlist(watchlist);
     checkAlerts();
     broadcastQuotes();
+    recordSnapshots(watchlist, latestQuotes);
   } catch (err) {
     console.error('refreshQuotes failed', err);
   }
@@ -1196,6 +1130,7 @@ ipcMain.handle('settings:set', (_e, patch: Partial<Settings>) => {
   if (typeof patch.hotkeyEnabled === 'boolean' || typeof patch.hudHotkeyEnabled === 'boolean') registerHotkey();
   if (typeof patch.showTrayIcon === 'boolean') applyTrayVisibility();
   if (typeof patch.trayMoodEnabled === 'boolean') applyTrayMood();
+  if (typeof patch.crashReportingEnabled === 'boolean') setCrashReportingEnabled(patch.crashReportingEnabled);
   if (typeof patch.mainAlwaysOnTopEnabled === 'boolean' || typeof patch.miniAlwaysOnTopEnabled === 'boolean') {
     applyAlwaysOnTop();
   }
@@ -1229,11 +1164,37 @@ ipcMain.handle('chart:get-ranges', () => CHART_RANGES);
 ipcMain.handle('chart:get-history', async (_e, id: string, rangeKey: string) => {
   const item = watchlist.find((i) => i.id === id);
   if (!item) return [];
+  if (item.category === 'currency' || item.category === 'gold') {
+    return getStoredHistory(item.category, item.symbol, rangeKey);
+  }
   return fetchHistoryForItem(item, rangeKey);
 });
 
+ipcMain.handle('portfolio:get-summary', (): CurrencyGroupSummary[] => {
+  const valuations = watchlist
+    .map((item) => computeItemValuation(item, latestQuotes.get(item.id), transactions.filter((t) => t.itemId === item.id)))
+    .filter((v): v is NonNullable<typeof v> => v != null);
+  return groupValuationsByCurrency(valuations);
+});
+
+// The link comes from a third-party news feed (Google News RSS, aggregating
+// many publishers); only allow http(s) before handing it to the OS, since
+// shell.openExternal with an unvalidated scheme (file:, javascript:, a
+// vulnerable custom protocol handler, ...) is a known Electron risk.
+function isHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
 ipcMain.handle('news:get', async (_e, force: boolean) => fetchMarketNews(force));
-ipcMain.handle('news:open-link', (_e, url: string) => shell.openExternal(url));
+ipcMain.handle('news:open-link', (_e, url: string) => {
+  if (!isHttpUrl(url)) return;
+  return shell.openExternal(url);
+});
 
 ipcMain.handle('update:check', () => checkForUpdates());
 ipcMain.handle('update:install', () => installUpdateNow());
@@ -1296,6 +1257,10 @@ ipcMain.handle('auth:sign-out', async () => {
 });
 
 ipcMain.handle('feedback:submit', (_e, message: string, email?: string) => submitFeedback(message, email));
+
+ipcMain.handle('error:report', (_e, message: string, stack?: string, context?: string) =>
+  reportError('renderer', message, stack, context)
+);
 
 ipcMain.handle('window:open-settings', (_e, focusItemId?: string) => createSettingsWindow(focusItemId));
 ipcMain.handle('window:hide', () => mainWindow?.hide());

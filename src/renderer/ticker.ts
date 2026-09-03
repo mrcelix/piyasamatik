@@ -1,5 +1,8 @@
 import type { WatchlistItem, Quote } from '../main/providers/types';
 import { formatPrice, formatChange, changeClass, getDirectionIndicator } from './format';
+import { installErrorReporting } from './errorReporting';
+
+installErrorReporting('ticker-window');
 
 let watchlist: WatchlistItem[] = [];
 let quotes: Record<string, Quote> = {};

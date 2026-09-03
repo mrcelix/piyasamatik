@@ -1,5 +1,8 @@
 import { formatPrice, formatChange, changeClass, CHART_ICON, getAssetIconHtml, getDirectionIndicator } from './format';
 import type { AccentTheme } from '../main/store';
+import { installErrorReporting } from './errorReporting';
+
+installErrorReporting('mini-window');
 
 const itemId = new URLSearchParams(window.location.search).get('itemId') ?? '';
 let autofitEnabled = true;

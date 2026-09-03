@@ -4,6 +4,7 @@ import type { Settings, UpdateStatus, WatchlistList, Transaction } from './store
 import type { ConvertCode } from './providers/truncgil';
 import type { ChartRange, NewsItem } from './providers';
 import type { AuthUser } from './auth';
+import type { CurrencyGroupSummary } from './portfolio';
 
 const api = {
   getWatchlist: (): Promise<WatchlistItem[]> => ipcRenderer.invoke('watchlist:get'),
@@ -96,6 +97,9 @@ const api = {
   },
   submitFeedback: (message: string, email?: string): Promise<{ error?: string }> =>
     ipcRenderer.invoke('feedback:submit', message, email),
+  reportError: (message: string, stack?: string, context?: string): void =>
+    void ipcRenderer.invoke('error:report', message, stack, context),
+  getPortfolioSummary: (): Promise<CurrencyGroupSummary[]> => ipcRenderer.invoke('portfolio:get-summary'),
 };
 
 export type MiniTakipApi = typeof api;

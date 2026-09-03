@@ -1,10 +1,15 @@
-import type { HistoryPoint } from '../main/providers/types';
+import type { HistoryPoint, ItemCategory } from '../main/providers/types';
 import type { AccentTheme } from '../main/store';
-import { formatPrice, getDirectionIndicator } from './format';
+import { formatPrice, getDirectionIndicator, escapeHtml } from './format';
+import { computeSMA, computeRSI } from './indicators';
+import { installErrorReporting } from './errorReporting';
+
+installErrorReporting('chart-window');
 
 const itemId = new URLSearchParams(window.location.search).get('itemId') ?? '';
 let currentRange = '1a';
 let currentCurrency = '';
+let currentCategory: ItemCategory | '' = '';
 let currentPoints: HistoryPoint[] = [];
 let layout: Layout | null = null;
 let showSma = false;
@@ -18,44 +23,6 @@ const summaryEl = document.getElementById('chart-summary') as HTMLDivElement;
 const rangeBarEl = document.getElementById('range-bar') as HTMLDivElement;
 const indicatorBarEl = document.getElementById('indicator-bar') as HTMLDivElement;
 const chartAreaEl = document.getElementById('chart-area') as HTMLDivElement;
-
-// ---- Technical indicators (pure math over the already-fetched history) ----
-
-function computeSMA(points: HistoryPoint[], period: number): (number | null)[] {
-  const result: (number | null)[] = new Array(points.length).fill(null);
-  let sum = 0;
-  for (let i = 0; i < points.length; i++) {
-    sum += points[i].v;
-    if (i >= period) sum -= points[i - period].v;
-    if (i >= period - 1) result[i] = sum / period;
-  }
-  return result;
-}
-
-// Standard Wilder's-smoothing RSI.
-function computeRSI(points: HistoryPoint[], period: number): (number | null)[] {
-  const result: (number | null)[] = new Array(points.length).fill(null);
-  if (points.length < period + 1) return result;
-  let gains = 0;
-  let losses = 0;
-  for (let i = 1; i <= period; i++) {
-    const diff = points[i].v - points[i - 1].v;
-    if (diff >= 0) gains += diff;
-    else losses -= diff;
-  }
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-  result[period] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
-  for (let i = period + 1; i < points.length; i++) {
-    const diff = points[i].v - points[i - 1].v;
-    const gain = diff > 0 ? diff : 0;
-    const loss = diff < 0 ? -diff : 0;
-    avgGain = (avgGain * (period - 1) + gain) / period;
-    avgLoss = (avgLoss * (period - 1) + loss) / period;
-    result[i] = avgLoss === 0 ? 100 : 100 - 100 / (1 + avgGain / avgLoss);
-  }
-  return result;
-}
 
 // Builds a polyline string from a sparse (nullable) series, breaking into
 // separate segments wherever data is missing instead of bridging the gap.
@@ -359,7 +326,10 @@ async function loadHistory() {
   summaryEl.innerHTML = '';
   const points = await window.miniTakip.getHistory(itemId, currentRange);
   if (points.length < 2) {
-    chartAreaEl.innerHTML = '<div class="chart-status">Bu oge icin gecmis veri bulunamiyor.</div>';
+    const isSelfAccumulated = currentCategory === 'currency' || currentCategory === 'gold';
+    chartAreaEl.innerHTML = isSelfAccumulated
+      ? '<div class="chart-status">Doviz/altin icin ucretsiz bir gecmis veri kaynagi olmadigindan, gecmis fiyatlar bu uygulamayi kurdugunuz tarihten itibaren gunluk olarak biriktirilir. Birkac gun sonra tekrar kontrol edin.</div>'
+      : '<div class="chart-status">Bu oge icin gecmis veri bulunamiyor.</div>';
     return;
   }
   currentPoints = points;
@@ -439,7 +409,10 @@ async function init() {
   applyAccentTheme(settings.accentTheme);
   const item = watchlist.find((i) => i.id === itemId);
   titleEl.textContent = item?.label ?? '???';
-  currentCurrency = item?.currency ?? '';
+  // Escaped once here (rather than at each innerHTML template use below) since
+  // currency ultimately comes from an external price-quote API response.
+  currentCurrency = escapeHtml(item?.currency ?? '');
+  currentCategory = item?.category ?? '';
   renderRangeButtons(ranges);
   renderIndicatorBar();
   await loadHistory();

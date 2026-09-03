@@ -50,7 +50,7 @@ async function loadFeed(): Promise<any> {
   return data;
 }
 
-function parseNumber(v: unknown): number | null {
+export function parseNumber(v: unknown): number | null {
   if (typeof v === 'number') return v;
   if (typeof v === 'string') {
     const cleaned = v.replace(/[^0-9.,-]/g, ''); // strip currency symbols like "$"

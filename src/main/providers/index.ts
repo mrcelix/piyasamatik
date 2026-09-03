@@ -2,6 +2,7 @@ import type { ItemCategory, Quote, SearchResult, WatchlistItem, HistoryPoint } f
 import { fetchTruncgilQuotes, searchTruncgil, convertAmount, getConvertibleCodes } from './truncgil';
 import { fetchYahooQuotes, searchYahoo, fetchYahooSparklines, fetchYahooHistory } from './yahoo';
 import { fetchCoingeckoQuotes, searchCoingecko, fetchCoingeckoSparklines, fetchCoingeckoHistory } from './coingecko';
+import { fetchTefasQuotes, searchTefas, fetchTefasHistory } from './tefas';
 
 export * from './types';
 export { convertAmount, getConvertibleCodes } from './truncgil';
@@ -52,7 +53,11 @@ export async function fetchHistoryForItem(item: WatchlistItem, rangeKey: string)
     if (!days) return [];
     return fetchCoingeckoHistory(item.symbol, days);
   }
-  // currency/gold: no free historical data source
+  if (item.category === 'fund') {
+    return fetchTefasHistory(item.symbol, rangeKey);
+  }
+  // currency/gold: no free historical data source (see priceHistory.ts for
+  // the self-accumulated alternative used instead)
   return [];
 }
 
@@ -86,11 +91,13 @@ export async function fetchQuotesForWatchlist(items: WatchlistItem[]): Promise<M
   const truncgilItems = items.filter((i) => i.category === 'currency' || i.category === 'gold');
   const yahooItems = items.filter((i) => i.category === 'stock' || i.category === 'index');
   const cryptoItems = items.filter((i) => i.category === 'crypto');
+  const fundItems = items.filter((i) => i.category === 'fund');
 
-  const [truncgil, yahoo, crypto] = await Promise.all([
+  const [truncgil, yahoo, crypto, funds] = await Promise.all([
     fetchTruncgilQuotes(truncgilItems.map((i) => i.symbol)),
     fetchYahooQuotes(yahooItems.map((i) => i.symbol)),
     fetchCoingeckoQuotes(cryptoItems.map((i) => i.symbol)),
+    fetchTefasQuotes(fundItems.map((i) => i.symbol)),
   ]);
 
   for (const item of truncgilItems) {
@@ -105,18 +112,23 @@ export async function fetchQuotesForWatchlist(items: WatchlistItem[]): Promise<M
     const q = crypto.get(item.symbol);
     if (q) result.set(item.id, q);
   }
+  for (const item of fundItems) {
+    const q = funds.get(item.symbol);
+    if (q) result.set(item.id, q);
+  }
 
   return result;
 }
 
 export async function searchAllProviders(query: string): Promise<SearchResult[]> {
   if (query.trim().length < 1) return [];
-  const [local, stocks, crypto] = await Promise.all([
+  const [local, stocks, crypto, funds] = await Promise.all([
     Promise.resolve(searchTruncgil(query)),
     searchYahoo(query),
     searchCoingecko(query),
+    searchTefas(query),
   ]);
-  return [...local, ...stocks, ...crypto];
+  return [...local, ...stocks, ...crypto, ...funds];
 }
 
 export function categoryLabel(category: ItemCategory): string {
@@ -131,5 +143,7 @@ export function categoryLabel(category: ItemCategory): string {
       return 'Endeks';
     case 'crypto':
       return 'Kripto';
+    case 'fund':
+      return 'Yatirim Fonu';
   }
 }

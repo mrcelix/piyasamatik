@@ -2,6 +2,11 @@ import type { WatchlistItem, ItemCategory } from '../main/providers/types';
 import type { Settings, ViewMode, ThemeMode, AccentTheme, UpdateStatus, WatchlistList, Transaction } from '../main/store';
 import type { AuthUser } from '../main/auth';
 import { computePosition, type ComputedPosition } from '../main/position';
+import { computeBenchmarkReturnPercent, type CurrencyGroupSummary } from '../main/portfolio';
+import { formatChange, changeClass } from './format';
+import { installErrorReporting } from './errorReporting';
+
+installErrorReporting('settings-window');
 
 const CATEGORY_LABEL: Record<ItemCategory, string> = {
   currency: 'Doviz',
@@ -9,6 +14,7 @@ const CATEGORY_LABEL: Record<ItemCategory, string> = {
   stock: 'Hisse',
   index: 'Endeks',
   crypto: 'Kripto',
+  fund: 'Yatirim Fonu',
 };
 
 const DEFAULT_LIST_ID = 'default';
@@ -18,6 +24,8 @@ let detachedIds: string[] = [];
 let expandedId: string | null = null;
 let lists: WatchlistList[] = [];
 let transactions: Transaction[] = [];
+let portfolioSummary: CurrencyGroupSummary[] = [];
+let chartRanges: { key: string; label: string }[] = [];
 
 const inputRefresh = document.getElementById('input-refresh') as HTMLInputElement;
 const inputStartup = document.getElementById('input-startup') as HTMLInputElement;
@@ -25,6 +33,12 @@ const inputTray = document.getElementById('input-tray') as HTMLInputElement;
 const inputTrayMood = document.getElementById('input-tray-mood') as HTMLInputElement;
 const inputHotkey = document.getElementById('input-hotkey') as HTMLInputElement;
 const inputHudHotkey = document.getElementById('input-hud-hotkey') as HTMLInputElement;
+const inputCrashReporting = document.getElementById('input-crash-reporting') as HTMLInputElement;
+const portfolioSummaryEl = document.getElementById('portfolio-summary') as HTMLDivElement;
+const selectBenchmarkCurrency = document.getElementById('select-benchmark-currency') as HTMLSelectElement;
+const selectBenchmarkItem = document.getElementById('select-benchmark-item') as HTMLSelectElement;
+const selectBenchmarkRange = document.getElementById('select-benchmark-range') as HTMLSelectElement;
+const benchmarkResultEl = document.getElementById('benchmark-result') as HTMLParagraphElement;
 const inputAlwaysOnTopMain = document.getElementById('input-alwaysontop-main') as HTMLInputElement;
 const inputAlwaysOnTopMini = document.getElementById('input-alwaysontop-mini') as HTMLInputElement;
 const inputMagnet = document.getElementById('input-magnet') as HTMLInputElement;
@@ -192,6 +206,7 @@ function renderGeneral(settings: Settings) {
   inputTrayMood.checked = settings.trayMoodEnabled;
   inputHotkey.checked = settings.hotkeyEnabled;
   inputHudHotkey.checked = settings.hudHotkeyEnabled;
+  inputCrashReporting.checked = settings.crashReportingEnabled;
   inputAlwaysOnTopMain.checked = settings.mainAlwaysOnTopEnabled;
   inputAlwaysOnTopMini.checked = settings.miniAlwaysOnTopEnabled;
   inputMagnet.checked = settings.magnetEnabled;
@@ -717,6 +732,10 @@ inputHudHotkey.addEventListener('change', () => {
   window.miniTakip.setSettings({ hudHotkeyEnabled: inputHudHotkey.checked });
 });
 
+inputCrashReporting.addEventListener('change', () => {
+  window.miniTakip.setSettings({ crashReportingEnabled: inputCrashReporting.checked });
+});
+
 inputAlwaysOnTopMain.addEventListener('change', () => {
   window.miniTakip.setSettings({ mainAlwaysOnTopEnabled: inputAlwaysOnTopMain.checked });
 });
@@ -801,9 +820,101 @@ document.addEventListener('contextmenu', (e) => {
   window.miniTakip.showContextMenu();
 });
 
+function formatMoney(value: number, currency: string): string {
+  return `${value.toLocaleString('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${currency}`;
+}
+
+async function renderPortfolio() {
+  portfolioSummary = await window.miniTakip.getPortfolioSummary();
+
+  portfolioSummaryEl.innerHTML = '';
+  if (portfolioSummary.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'settings-hint';
+    empty.textContent = 'Henuz adet/maliyet bilgisi girilmis bir oge yok (Izleme Listesi > bir oge > Detay > Portfoy veya Islemler).';
+    portfolioSummaryEl.appendChild(empty);
+  }
+  for (const g of portfolioSummary) {
+    const card = document.createElement('div');
+    card.className = 'alarm-group';
+
+    const title = document.createElement('div');
+    title.className = 'alarm-group-title';
+    title.textContent = `${g.currency} (${g.itemCount} oge)`;
+    card.appendChild(title);
+
+    const lines = document.createElement('div');
+    lines.className = 'alarm-group-hint';
+    const returnText = g.returnPercent != null ? formatChange(g.returnPercent) : 'n/a';
+    const returnClass = changeClass(g.returnPercent);
+    lines.innerHTML =
+      `Guncel deger: ${formatMoney(g.totalMarketValue, g.currency)} &middot; Maliyet: ${formatMoney(g.totalCostBasis, g.currency)}<br/>` +
+      `Gerceklesmemis K/Z: <span class="${returnClass}">${formatMoney(g.unrealizedPL, g.currency)} (${returnText})</span>` +
+      (g.realizedPL !== 0 ? ` &middot; Gerceklesen K/Z: ${formatMoney(g.realizedPL, g.currency)}` : '');
+    card.appendChild(lines);
+
+    portfolioSummaryEl.appendChild(card);
+  }
+
+  const prevCurrency = selectBenchmarkCurrency.value;
+  selectBenchmarkCurrency.innerHTML = '';
+  for (const g of portfolioSummary) {
+    const opt = document.createElement('option');
+    opt.value = g.currency;
+    opt.textContent = `${g.currency} (${g.itemCount} oge)`;
+    selectBenchmarkCurrency.appendChild(opt);
+  }
+  if (portfolioSummary.some((g) => g.currency === prevCurrency)) selectBenchmarkCurrency.value = prevCurrency;
+
+  await updateBenchmarkResult();
+}
+
+function renderBenchmarkItemOptions() {
+  const prevValue = selectBenchmarkItem.value;
+  selectBenchmarkItem.innerHTML = '';
+  for (const item of watchlist) {
+    const opt = document.createElement('option');
+    opt.value = item.id;
+    opt.textContent = `${item.label} (${CATEGORY_LABEL[item.category]})`;
+    selectBenchmarkItem.appendChild(opt);
+  }
+  if (watchlist.some((i) => i.id === prevValue)) selectBenchmarkItem.value = prevValue;
+}
+
+async function updateBenchmarkResult() {
+  const currency = selectBenchmarkCurrency.value;
+  const itemId = selectBenchmarkItem.value;
+  const rangeKey = selectBenchmarkRange.value;
+  const group = portfolioSummary.find((g) => g.currency === currency);
+  if (!group || group.returnPercent == null || !itemId || !rangeKey) {
+    benchmarkResultEl.textContent = '';
+    return;
+  }
+  const item = watchlist.find((i) => i.id === itemId);
+  const benchmarkLabel = item?.label ?? 'Secilen oge';
+  const history = await window.miniTakip.getHistory(itemId, rangeKey);
+  const benchmarkReturn = computeBenchmarkReturnPercent(history);
+  if (benchmarkReturn == null) {
+    benchmarkResultEl.textContent = `${benchmarkLabel} icin secilen donemde yeterli veri yok.`;
+    return;
+  }
+  const diff = group.returnPercent - benchmarkReturn;
+  const verdict = diff > 0.01 ? 'daha iyi' : diff < -0.01 ? 'daha dusuk' : 'benzer';
+  benchmarkResultEl.textContent =
+    `Portfoyunuz (${currency}) maliyet bazli ${formatChange(group.returnPercent)} getiri sagladi. ` +
+    `${benchmarkLabel} secilen donemde ${formatChange(benchmarkReturn)} degisti. ` +
+    `Portfoyunuz bu karsilastirmada ${verdict} performans gosterdi (fark: ${diff > 0 ? '+' : ''}${diff.toFixed(2)} puan).`;
+}
+
+selectBenchmarkCurrency.addEventListener('change', () => void updateBenchmarkResult());
+selectBenchmarkItem.addEventListener('change', () => void updateBenchmarkResult());
+selectBenchmarkRange.addEventListener('change', () => void updateBenchmarkResult());
+
 window.miniTakip.onWatchlistChanged((updated) => {
   watchlist = updated;
   renderWatchlistManage();
+  renderBenchmarkItemOptions();
+  void renderPortfolio();
 });
 
 window.miniTakip.onDetachedChanged((ids) => {
@@ -820,10 +931,11 @@ window.miniTakip.onListsChanged((updated) => {
 window.miniTakip.onTransactionsChanged((updated) => {
   transactions = updated;
   renderWatchlistManage();
+  void renderPortfolio();
 });
 
 async function init() {
-  const [settings, wl, ids, version, user, ls, txs] = await Promise.all([
+  const [settings, wl, ids, version, user, ls, txs, ranges] = await Promise.all([
     window.miniTakip.getSettings(),
     window.miniTakip.getWatchlist(),
     window.miniTakip.getDetachedIds(),
@@ -831,11 +943,13 @@ async function init() {
     window.miniTakip.getAuthUser(),
     window.miniTakip.getLists(),
     window.miniTakip.getTransactions(),
+    window.miniTakip.getChartRanges(),
   ]);
   watchlist = wl;
   detachedIds = ids;
   lists = ls;
   transactions = txs;
+  chartRanges = ranges;
   appVersionEl.textContent = version;
   updateStatusTextEl.textContent = '-';
   renderGeneral(settings);
@@ -844,6 +958,16 @@ async function init() {
   renderListsManage();
   renderWatchlistManage();
   renderAuth(user);
+
+  selectBenchmarkRange.innerHTML = '';
+  for (const r of chartRanges) {
+    const opt = document.createElement('option');
+    opt.value = r.key;
+    opt.textContent = r.label;
+    selectBenchmarkRange.appendChild(opt);
+  }
+  renderBenchmarkItemOptions();
+  await renderPortfolio();
 
   const focusItemId = new URLSearchParams(window.location.search).get('focusItemId');
   if (focusItemId) focusWatchlistItem(focusItemId);

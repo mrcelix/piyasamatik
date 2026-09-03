@@ -48,6 +48,8 @@ export interface Settings {
   accentTheme: AccentTheme;
   autofitEnabled: boolean;
   gridShowCategory: boolean;
+  heatmapSortByPercent: boolean;
+  crashReportingEnabled: boolean;
   globalAlert: GlobalAlertSettings;
   // Presence of a key means that item's mini window should be open;
   // the value remembers its last position/size across restarts.
@@ -77,6 +79,8 @@ const DEFAULT_SETTINGS: Settings = {
   accentTheme: 'blue',
   autofitEnabled: true,
   gridShowCategory: false,
+  heatmapSortByPercent: true,
+  crashReportingEnabled: true,
   globalAlert: { enabled: false },
   detachedWindows: {},
 };

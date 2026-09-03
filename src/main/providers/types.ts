@@ -1,4 +1,4 @@
-export type ItemCategory = 'currency' | 'gold' | 'stock' | 'index' | 'crypto';
+export type ItemCategory = 'currency' | 'gold' | 'stock' | 'index' | 'crypto' | 'fund';
 
 export interface WatchlistItem {
   id: string;
