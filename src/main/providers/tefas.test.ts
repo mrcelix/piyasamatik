@@ -12,6 +12,23 @@ beforeEach(() => {
   global.fetch = vi.fn();
 });
 
+// The fund list is fetched twice — once per roster (fonTipi YAT / EMK) — so a
+// single blanket mock would serve the same funds to both and double every
+// result. Dispatch on the request body the way the real endpoint does.
+function mockRosters(yat: any[], emk: any[] = [], opts: { emkFails?: boolean } = {}) {
+  (global.fetch as any).mockImplementation(async (_url: string, init: any) => {
+    const body = JSON.parse(init.body);
+    if (body.fonTipi === 'EMK') {
+      return opts.emkFails ? jsonResponse({}, false) : jsonResponse({ resultList: emk });
+    }
+    return jsonResponse({ resultList: yat });
+  });
+}
+
+const TCD = { fonKodu: 'TCD', fonUnvan: 'TACİRLER PORTFÖY DEĞIŞKEN FON', fonTurAciklama: 'Degisken Fon' };
+const AU1 = { fonKodu: 'AU1', fonUnvan: 'A1 CAPİTAL PORTFÖY ALTIN FONU', fonTurAciklama: 'Kiymetli Madenler Fonu' };
+const EAE = { fonKodu: 'EAE', fonUnvan: 'AGESA HAYAT VE EMEKLİLİK A.Ş. ALTIN EMEKLİLİK YATIRIM FONU', fonTurAciklama: 'Altın Fonu' };
+
 describe('searchTefas', () => {
   it('returns [] for an empty query without calling fetch', async () => {
     const { searchTefas } = await import('./tefas');
@@ -21,14 +38,7 @@ describe('searchTefas', () => {
   });
 
   it('matches funds by code or (Turkish-locale-insensitive) name and maps to SearchResult', async () => {
-    (global.fetch as any).mockResolvedValue(
-      jsonResponse({
-        resultList: [
-          { fonKodu: 'TCD', fonUnvan: 'TACİRLER PORTFÖY DEĞIŞKEN FON', fonTurAciklama: 'Degisken Fon' },
-          { fonKodu: 'AU1', fonUnvan: 'A1 CAPİTAL PORTFÖY ALTIN FONU', fonTurAciklama: 'Kiymetli Madenler Fonu' },
-        ],
-      })
-    );
+    mockRosters([TCD, AU1]);
     const { searchTefas } = await import('./tefas');
     const result = await searchTefas('altin');
     expect(result).toHaveLength(1);
@@ -39,6 +49,29 @@ describe('searchTefas', () => {
       currency: 'TRY',
       sub: 'Kiymetli Madenler Fonu',
     });
+  });
+
+  it('searches pension (BES) funds alongside investment funds, tagging them in sub', async () => {
+    mockRosters([AU1], [EAE]);
+    const { searchTefas } = await import('./tefas');
+    const result = await searchTefas('altin');
+    expect(result.map((r) => r.symbol).sort()).toEqual(['AU1', 'EAE']);
+    expect(result.find((r) => r.symbol === 'EAE')!.sub).toBe('BES · Altın Fonu');
+    // Investment funds must stay untagged.
+    expect(result.find((r) => r.symbol === 'AU1')!.sub).toBe('Kiymetli Madenler Fonu');
+  });
+
+  it('matches pension funds on the query "BES", which never appears in their name', async () => {
+    mockRosters([TCD, AU1], [EAE]);
+    const { searchTefas } = await import('./tefas');
+    const result = await searchTefas('bes');
+    expect(result.map((r) => r.symbol)).toEqual(['EAE']);
+  });
+
+  it('still returns the other roster when one of the two fails', async () => {
+    mockRosters([AU1], [], { emkFails: true });
+    const { searchTefas } = await import('./tefas');
+    await expect(searchTefas('altin')).resolves.toHaveLength(1);
   });
 
   it('returns [] when the fund list request fails, rather than throwing', async () => {

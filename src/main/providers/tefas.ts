@@ -13,24 +13,32 @@ interface TefasFundListEntry {
   fonKodu: string;
   fonUnvan: string;
   fonTurAciklama?: string;
+  // Set by us, not the API: which roster this entry came from.
+  isPension?: boolean;
 }
 
-// The whole fund roster (1000+ funds) comes back in one unpaginated call, so
-// we fetch it once and cache — the roster itself changes rarely, unlike
-// prices.
+// The same endpoint serves two separate rosters depending on `fonTipi`:
+// 'YAT' is ordinary investment funds (~1060), 'EMK' is pension funds — the
+// ones held inside a BES (Bireysel Emeklilik Sistemi) account (~310). Fund
+// codes are unique across BOTH rosters (verified: zero overlap), so they can
+// share one symbol namespace without disambiguation.
+const FUND_TYPES = [
+  { fonTipi: 'YAT', isPension: false },
+  { fonTipi: 'EMK', isPension: true },
+] as const;
+
+// Each roster comes back in one unpaginated call, so we fetch once and cache —
+// the rosters themselves change rarely, unlike prices.
 let fundListCache: { data: TefasFundListEntry[]; fetchedAt: number } | null = null;
 const FUND_LIST_TTL_MS = 60 * 60 * 1000;
 
-async function loadFundList(): Promise<TefasFundListEntry[]> {
-  if (fundListCache && Date.now() - fundListCache.fetchedAt < FUND_LIST_TTL_MS) {
-    return fundListCache.data;
-  }
+async function fetchRoster(fonTipi: string): Promise<TefasFundListEntry[]> {
   const res = await fetch(FUND_LIST_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       dil: 'TR',
-      fonTipi: 'YAT',
+      fonTipi,
       kurucuKodu: null,
       sfonTurKod: null,
       fonTurAciklama: null,
@@ -52,7 +60,23 @@ async function loadFundList(): Promise<TefasFundListEntry[]> {
   });
   if (!res.ok) throw new Error(`tefas HTTP ${res.status}`);
   const json: any = await res.json();
-  const list: TefasFundListEntry[] = json?.resultList ?? [];
+  return json?.resultList ?? [];
+}
+
+async function loadFundList(): Promise<TefasFundListEntry[]> {
+  if (fundListCache && Date.now() - fundListCache.fetchedAt < FUND_LIST_TTL_MS) {
+    return fundListCache.data;
+  }
+  // allSettled rather than all: if one roster is unavailable, searching the
+  // other is still better than failing outright.
+  const settled = await Promise.allSettled(FUND_TYPES.map((t) => fetchRoster(t.fonTipi)));
+  const list: TefasFundListEntry[] = [];
+  settled.forEach((r, i) => {
+    if (r.status === 'fulfilled') {
+      for (const f of r.value) list.push({ ...f, isPension: FUND_TYPES[i].isPension });
+    }
+  });
+  if (list.length === 0) throw new Error('tefas fon listesi bos');
   fundListCache = { data: list, fetchedAt: Date.now() };
   return list;
 }
@@ -90,9 +114,23 @@ export async function searchTefas(query: string): Promise<SearchResult[]> {
     return [];
   }
   return list
-    .filter((f) => turkishFold(f.fonKodu).includes(q) || turkishFold(f.fonUnvan).includes(q))
+    .filter((f) => {
+      if (turkishFold(f.fonKodu).includes(q) || turkishFold(f.fonUnvan).includes(q)) return true;
+      // Pension fund names say "EMEKLILIK YATIRIM FONU" and never "BES", but
+      // that is the name savers actually know the system by, so let it match.
+      return f.isPension === true && 'bes'.includes(q);
+    })
     .slice(0, 25)
-    .map((f) => ({ category: 'fund', symbol: f.fonKodu, label: f.fonUnvan, currency: 'TRY', sub: f.fonTurAciklama }));
+    .map((f) => ({
+      category: 'fund',
+      symbol: f.fonKodu,
+      label: f.fonUnvan,
+      currency: 'TRY',
+      // fonTurAciklama uses the same vocabulary for both rosters ("Altin Fonu",
+      // "Degisken Fon"), so without this prefix a pension fund is
+      // indistinguishable from an investment fund in the results list.
+      sub: f.isPension ? `BES · ${f.fonTurAciklama ?? 'Emeklilik Fonu'}` : f.fonTurAciklama,
+    }));
 }
 
 interface TefasHistoryEntry {
