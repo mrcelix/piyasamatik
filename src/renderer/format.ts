@@ -83,12 +83,20 @@ export const AUTOFIT_ICON =
 
 const DIR_UP_ICON = '<svg viewBox="0 0 10 10" width="8" height="8"><polygon points="5,1 9,8 1,8" fill="currentColor"/></svg>';
 const DIR_DOWN_ICON = '<svg viewBox="0 0 10 10" width="8" height="8"><polygon points="5,9 1,2 9,2" fill="currentColor"/></svg>';
-const DIR_FLAT_ICON =
-  '<svg viewBox="0 0 10 10" width="8" height="8"><rect x="1" y="4.2" width="8" height="1.6" rx="0.8" fill="currentColor"/></svg>';
 
-export function getDirectionIndicator(newPrice: number, oldPrice: number | undefined): { html: string; cls: string } {
+// Returns null when there is no movement to report — either because this is the
+// first tick for the item (no previous price to compare against) or because the
+// price is unchanged. Callers must then render no element at all: the flat state
+// used to draw a small horizontal bar, but sitting immediately left of the price
+// it read as a minus sign ("- 4.430,19 USD" looks like a negative number), and on
+// first load every row showed it at once. An arrow now appears only when it
+// actually carries information.
+export function getDirectionIndicator(
+  newPrice: number,
+  oldPrice: number | undefined
+): { html: string; cls: string } | null {
   if (oldPrice == null || !Number.isFinite(newPrice) || !Number.isFinite(oldPrice) || newPrice === oldPrice) {
-    return { html: DIR_FLAT_ICON, cls: 'change-flat' };
+    return null;
   }
   return newPrice > oldPrice ? { html: DIR_UP_ICON, cls: 'change-up' } : { html: DIR_DOWN_ICON, cls: 'change-down' };
 }

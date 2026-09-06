@@ -93,70 +93,17 @@ Ayarlar > Hesap bolumunden Google hesabiyla veya dogrudan e-posta/sifre ile giri
 
 **Bu ozelligin calismasi icin gerekenler (sizin yapmaniz gerekiyor, ben yapamam):**
 
-1. Supabase projenizin SQL Editor'unde asagidaki tabloyu ve RLS politikalarini olusturun:
+1. Supabase projenizin SQL Editor'unde [`supabase/schema.sql`](supabase/schema.sql) dosyasinin tamamini yapistirip calistirin. Bu dosya uc tabloyu birden olusturur:
 
-```sql
-create table if not exists public.user_data (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  settings jsonb not null default '{}'::jsonb,
-  watchlist jsonb not null default '[]'::jsonb,
-  updated_at timestamptz not null default now()
-);
+   - **`user_data`** — bulut senkronizasyonu (ayarlar + izleme listesi)
+   - **`feedback`** — Ayarlar > Geri Bildirim
+   - **`error_reports`** — Ayarlar > Genel > "Cokme/hata raporlarini otomatik gonder"
 
-alter table public.user_data enable row level security;
+   Dosya idempotent'tir, birden fazla kez calistirilabilir ve mevcut veriyi silmez; tablolarin bir kismini daha once olusturduysaniz da guvenle calistirabilirsiniz. Sutun adlari `src/main/auth.ts` ve `src/main/crashReporter.ts` icindeki insert/upsert cagrilariyla eslesmek zorundadir — semayi degistirirseniz orayi da guncelleyin.
 
-create policy "Users can view own data" on public.user_data
-  for select using (auth.uid() = user_id);
+   `error_reports` olusturulana kadar hata raporlama denemeleri sessizce basarisiz olur (uygulama bunu yutar, kullaniciya bir sey gostermez) — ozellik calisir ama hicbir kayit Supabase'e ulasmaz. Ayni sekilde `user_data` yoksa bulut senkronizasyonu, `feedback` yoksa geri bildirim gonderimi sessizce calismaz.
 
-create policy "Users can insert own data" on public.user_data
-  for insert with check (auth.uid() = user_id);
-
-create policy "Users can update own data" on public.user_data
-  for update using (auth.uid() = user_id);
-```
-
-2. **Geri Bildirim** (Ayarlar > Geri Bildirim) icin ayrica su tabloyu olusturun (giris yapmis olsun olmasin herkes gonderebilsin diye insert herkese acik, okuma/degistirme kapali):
-
-```sql
-create table if not exists public.feedback (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete set null,
-  email text,
-  message text not null,
-  app_version text,
-  created_at timestamptz not null default now()
-);
-
-alter table public.feedback enable row level security;
-
-create policy "Anyone can submit feedback" on public.feedback
-  for insert with check (true);
-```
-
-3. **Cokme/hata raporlama** (Ayarlar > Genel > "Cokme/hata raporlarini otomatik gonder") icin ayrica su tabloyu olusturun (feedback tablosuyla ayni mantik: insert herkese acik, okuma/degistirme kapali):
-
-```sql
-create table if not exists public.error_reports (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete set null,
-  source text not null,
-  message text not null,
-  stack text,
-  context text,
-  app_version text,
-  platform text,
-  created_at timestamptz not null default now()
-);
-
-alter table public.error_reports enable row level security;
-
-create policy "Anyone can submit error reports" on public.error_reports
-  for insert with check (true);
-```
-
-Bu tablo olusturulana kadar hata raporlama denemeleri sessizce basarisiz olur (uygulama bunu yutar, kullaniciya bir sey gostermez) — ozellik calisir ama hicbir kayit Supabase'e ulasmaz.
-
-4. Supabase Dashboard > Authentication > Providers > Google'i etkinlestirin. Bunun icin bir Google Cloud projesinde OAuth Client ID/Secret olusturup (Google Cloud Console > APIs & Services > Credentials), Authorized redirect URI olarak Supabase'in kendi callback adresini eklemeniz gerekir: `https://<proje-id>.supabase.co/auth/v1/callback` (bu adres, Supabase'in size Google provider ayarlari sayfasinda gosterdigi adresle ayni olmalidir). Client ID/Secret'i Supabase'deki Google provider ayarlarina yapistirin.
+2. Supabase Dashboard > Authentication > Providers > Google'i etkinlestirin. Bunun icin bir Google Cloud projesinde OAuth Client ID/Secret olusturup (Google Cloud Console > APIs & Services > Credentials), Authorized redirect URI olarak Supabase'in kendi callback adresini eklemeniz gerekir: `https://<proje-id>.supabase.co/auth/v1/callback` (bu adres, Supabase'in size Google provider ayarlari sayfasinda gosterdigi adresle ayni olmalidir). Client ID/Secret'i Supabase'deki Google provider ayarlarina yapistirin.
 
 Bu iki adim tamamlanmadan "Google ile Giris Yap" butonu "provider is not enabled" hatasi verir (bu, uygulamadaki bir hata degil, henuz tamamlanmamis bir kurulum adimidir).
 
@@ -224,7 +171,9 @@ Ana pencere basligindaki saydamlik simgesiyle (veya Ayarlar > Pencereler'den) ac
 
 ## Yon oku
 
-Her satirda (ve mini pencerede) fiyatin yaninda kucuk bir ok belirir: bir onceki veriye gore fiyat yukselmisse yesil `▲`, dusmusse kirmizi `▼`, degismemisse gri `▬`. Bu, gunluk degisim yuzdesinden (`row-change`) bagimsiz olarak sadece en son iki guncelleme arasindaki ani yonu gosterir.
+Her satirda (ve mini pencerede) fiyatin solunda kucuk bir ok belirir: bir onceki veriye gore fiyat yukselmisse yesil `▲`, dusmusse kirmizi `▼`. Bu, gunluk degisim yuzdesinden (`row-change`) bagimsiz olarak sadece en son iki guncelleme arasindaki ani yonu gosterir.
+
+Fiyat degismediyse — ve ilk aciliste, henuz karsilastirilacak onceki bir veri yokken — **hicbir sey cizilmez**. Onceden bu durumda gri yatay bir cubuk gosteriliyordu, ancak fiyatin hemen solunda durdugu icin eksi isareti gibi okunuyordu (`- 4.430,19 USD` negatif bir sayi gibi gorunuyordu) ve ilk aciliste tum satirlarda ayni anda beliriyordu. Artik ok yalnizca gercekten bir hareket varken cikar. (Gecmis grafik penceresindeki ozet satiri bunun disindadir: orada ok, secilen donemin basi ile sonu arasindaki farki gosterdigi icin anlamlidir.)
 
 ## Sekmeler, kategori filtresi ve siralama
 

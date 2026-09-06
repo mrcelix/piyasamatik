@@ -69,12 +69,22 @@ window.miniTakip.onQuotesUpdated((quotes) => {
     changeEl.textContent = '';
     changeEl.className = 'change-flat';
     dirArrowEl.textContent = '';
+    dirArrowEl.style.display = 'none';
     return;
   }
   const dir = getDirectionIndicator(q.price, lastPrice);
   lastPrice = q.price;
-  dirArrowEl.innerHTML = dir.html;
-  dirArrowEl.className = `dir-arrow ${dir.cls}`;
+  // Hidden via style rather than the `hidden` attribute: `.dir-arrow` sets
+  // `display: inline-flex`, which would override the UA's `[hidden]` rule and
+  // leave the element occupying a slot in the price line's 4px flex gap.
+  if (dir) {
+    dirArrowEl.innerHTML = dir.html;
+    dirArrowEl.className = `dir-arrow ${dir.cls}`;
+    dirArrowEl.style.display = '';
+  } else {
+    dirArrowEl.textContent = '';
+    dirArrowEl.style.display = 'none';
+  }
   priceEl.textContent = formatPrice(q.price, q.currency);
   changeEl.textContent = formatChange(q.changePercent);
   changeEl.className = changeClass(q.changePercent);

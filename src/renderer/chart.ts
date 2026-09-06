@@ -142,10 +142,14 @@ function renderSummary(points: HistoryPoint[]) {
   const first = points[0].v;
   const last = points[points.length - 1].v;
   const pct = first !== 0 ? ((last - first) / first) * 100 : 0;
+  // Unlike the watchlist rows, this compares the first and last point of the
+  // whole charted period, so the arrow is meaningful here. It is null only when
+  // the period opened and closed at the same price — then show the percentage
+  // on its own, in the neutral colour, with no arrow.
   const dir = getDirectionIndicator(last, first);
   summaryEl.innerHTML = `
     <span class="cs-price">${formatPrice(last, currentCurrency)}</span>
-    <span class="cs-change ${dir.cls}">${dir.html}<span>${formatPct(pct)}</span></span>
+    <span class="cs-change ${dir?.cls ?? 'change-flat'}">${dir?.html ?? ''}<span>${formatPct(pct)}</span></span>
     <span class="cs-range-label">${formatDate(points[0].t)} — ${formatDate(points[points.length - 1].t)}</span>
   `;
 }

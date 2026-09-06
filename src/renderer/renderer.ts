@@ -610,7 +610,8 @@ window.miniTakip.onQuotesUpdated((updated) => {
   for (const id of Object.keys(updated)) {
     const q = updated[id];
     if (!q.error) {
-      newDirections[id] = getDirectionIndicator(q.price, lastPrices[id]);
+      const dir = getDirectionIndicator(q.price, lastPrices[id]);
+      if (dir) newDirections[id] = dir;
       lastPrices[id] = q.price;
     }
   }
