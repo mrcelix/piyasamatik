@@ -17,32 +17,86 @@
   }
   /* vmin-based so the design is identical regardless of the actual captured
      pixel size, as long as the window is square (enforced by generate-icons.js). */
-  .icon-box {
+  svg {
     width: 86vmin;
     height: 86vmin;
-    border-radius: 19vmin;
-    background: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-sizing: border-box;
-  }
-  .dollar {
-    font-family: Arial, sans-serif;
-    font-weight: 900;
-    font-size: 49vmin;
-    line-height: 1;
-    color: #4a7dff;
+    display: block;
   }
 </style>
 </head>
 <body>
-  <div class="icon-box"><span class="dollar" id="dollar">$</span></div>
+  <!--
+    Design notes — the constraints here are unusual, so they are worth stating:
+
+    1. The smallest target is a 16px tray icon (tray.png is 32px, halved again on
+       a 100% DPI display). Thin strokes and any lettering dissolve at that size,
+       so the mark is a single very thick polyline and nothing else. An area fill
+       under the line was tried and dropped: it was invisible at tray sizes and
+       at 1024px it read as a hard-edged dark plateau rather than as shading.
+
+    2. The tray icon has three colour variants (neutral / up / down) driven by
+       ?color=, because it doubles as the market-mood indicator. That means the
+       SHAPE must not imply a direction: a rising line tinted red for "market
+       down" contradicts itself. So the line is a symmetric zigzag that starts
+       and ends at the same height — it reads as "market movement" with no net
+       direction, and the colour alone carries up/down.
+
+    3. The tile is drawn for icon.png only, NOT for the tray icons (?bare=1).
+       A tile of any single colour fails somewhere: the old white one vanished
+       on light backgrounds, and a dark one vanishes on the dark taskbar that
+       Windows ships by default — at 16px the tile merged into the background
+       and left a faint squiggle. Tray icons are therefore a bare glyph on
+       transparency, which is the Windows convention and reads on any taskbar
+       colour because the accent colours are saturated. The app icon keeps the
+       tile: it appears on the installer, Start menu and taskbar button, where
+       a bare line would look unfinished.
+
+    4. Bare mode scales the mark up about the centre, because without the tile
+       there is no reason to keep the tile's optical padding — at 16px every
+       pixel of glyph counts.
+  -->
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="tile" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#1b2740"/>
+        <stop offset="1" stop-color="#0b1220"/>
+      </linearGradient>
+    </defs>
+
+    <g id="mark" color="#4a7dff">
+      <rect id="tileRect" x="0" y="0" width="100" height="100" rx="22" ry="22" fill="url(#tile)"/>
+
+      <!-- The line itself: round joins keep it from looking chipped once the
+           1024px master is downsampled to 32 and 16 pixels. Start and end sit
+           at the same y (44) so the mark carries no net direction — see note 2. -->
+      <g id="line">
+        <path d="M15 44 L38 26 L62 68 L85 44"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="10"
+              stroke-linecap="round"
+              stroke-linejoin="round"/>
+      </g>
+    </g>
+  </svg>
+
   <script>
-    // ?color=RRGGBB overrides the dollar sign color, used to generate the
-    // green/red "mood" tray icon variants without duplicating this markup.
-    const color = new URLSearchParams(location.search).get('color');
-    if (color) document.getElementById('dollar').style.color = '#' + color;
+    const params = new URLSearchParams(location.search);
+
+    // ?color=RRGGBB overrides the accent, used to generate the green/red "mood"
+    // tray icon variants without duplicating this markup. Everything tinted by
+    // the accent uses currentColor, so setting it once on the group is enough.
+    const color = params.get('color');
+    if (color) document.getElementById('mark').setAttribute('color', '#' + color);
+
+    // ?bare=1 drops the tile and enlarges the glyph — see notes 3 and 4.
+    if (params.get('bare') === '1') {
+      document.getElementById('tileRect').setAttribute('display', 'none');
+      document.getElementById('line').setAttribute(
+        'transform',
+        'translate(50 50) scale(1.24) translate(-50 -50)'
+      );
+    }
   </script>
 </body>
 </html>

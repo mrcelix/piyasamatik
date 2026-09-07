@@ -2,6 +2,12 @@
 // icon), tray.png/tray@2x.png (32/64px), and the green/red "mood" tray icon
 // variants (tray-up/tray-down) from icon-source.html.
 // Run: npx electron assets/generate-icons.js
+//
+// icon.png and the tray icons are rendered from the SAME source but in two
+// different modes: the app icon keeps its rounded tile, the tray icons are
+// rendered bare (?bare=1) on transparency. A tile of any one colour is
+// invisible against some taskbar — a dark tile disappears on Windows' default
+// dark taskbar at 16px. See the design notes in icon-source.html.
 const { app, BrowserWindow, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
@@ -21,7 +27,7 @@ app.whenReady().then(async () => {
   // Pick a size guaranteed to fit and stay square.
   const size = Math.max(300, Math.min(work.width, work.height) - 60);
 
-  for (const variant of VARIANTS) {
+  async function render(params) {
     const win = new BrowserWindow({
       width: size,
       height: size,
@@ -32,8 +38,8 @@ app.whenReady().then(async () => {
       show: false,
     });
 
-    const query = variant.color ? `?color=${variant.color}` : '';
-    await win.loadFile(path.join(__dirname, 'icon-source.html'), { search: query });
+    const search = params.length ? `?${params.join('&')}` : '';
+    await win.loadFile(path.join(__dirname, 'icon-source.html'), { search });
     await new Promise((r) => setTimeout(r, 400));
 
     const captured = await win.webContents.capturePage();
@@ -41,9 +47,20 @@ app.whenReady().then(async () => {
     if (capSize.width !== capSize.height) {
       throw new Error(`capture not square: ${capSize.width}x${capSize.height}`);
     }
+    win.close();
+    return captured.resize({ width: 1024, height: 1024, quality: 'best' });
+  }
 
-    const master = captured.resize({ width: 1024, height: 1024, quality: 'best' });
-    if (variant.suffix === '') fs.writeFileSync(path.join(__dirname, 'icon.png'), master.toPNG());
+  // App icon: tiled, default accent only.
+  const appMaster = await render([]);
+  fs.writeFileSync(path.join(__dirname, 'icon.png'), appMaster.toPNG());
+
+  // Tray icons: bare glyph on transparency, one per mood.
+  for (const variant of VARIANTS) {
+    const params = ['bare=1'];
+    if (variant.color) params.push(`color=${variant.color}`);
+    const master = await render(params);
+
     fs.writeFileSync(
       path.join(__dirname, `tray${variant.suffix}.png`),
       master.resize({ width: 32, height: 32, quality: 'best' }).toPNG()
@@ -52,8 +69,6 @@ app.whenReady().then(async () => {
       path.join(__dirname, `tray${variant.suffix}@2x.png`),
       master.resize({ width: 64, height: 64, quality: 'best' }).toPNG()
     );
-
-    win.close();
   }
 
   console.log('icons written to', __dirname);

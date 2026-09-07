@@ -252,4 +252,10 @@ Ust baslikta beliren gazete simgesine tiklamak, borsa/doviz/altin/ekonomi/kripto
 ## Bilinen sinirlamalar
 
 - Bu ortamda (sandboxed dev container) gercek bir Windows masaustu ekrani goruntulenemediginden pencerelerin gorsel ciktisi (renkler, hizalama, grafik olcekleme) pixel-pixel test edilemedi; veri katmani ve tum IPC akislari (favoriler, renk, alarm, portfoy, grafik, cevirici) canli uc noktalara ve coklu pencere acilisina karsi dogrulandi (main+ayarlar+mini+grafik penceresi ayni anda hatasiz acildi). Kendi makinenizde `npm start` ile gorsel ince ayari siz yapabilirsiniz.
-- `assets/icon.png` ve `assets/tray.png` yer tutucu (placeholder) ikonlardir; `assets/generate-icons.js` ile uretilmislerdir. Gercek bir logo ile degistirebilirsiniz.
+- Ikonlar `assets/icon-source.html` icindeki tek bir SVG'den uretilir; degistirmek icin o dosyayi duzenleyip `npx electron assets/generate-icons.js` calistirin (icon.png ve alti tepsi dosyasinin tamami yeniden yazilir).
+
+  Logo, hareket halindeki bir piyasa cizgisidir. Uc tasarim kisiti var, degistirmeden once bunlari bilmekte fayda var:
+
+  - **Sekil yon belirtmez.** Tepsi ikonu ayni zamanda piyasa nabzi gostergesidir ve uc renkte uretilir (notr/yesil/kirmizi); yukselen bir cizgi kirmiziya boyandiginda kendisiyle celisirdi. Bu yuzden cizgi basladigi yukseklikte biter, yonu yalnizca renk tasir.
+  - **Tepsi ikonlari tile'siz, uygulama ikonu tile'lidir.** Tek renkli bir tile bir yerde mutlaka kayboluyor: eski beyaz tile acik zeminde, koyu tile ise Windows'un varsayilan koyu gorev cubugunda 16px'te yok oluyordu. Tepsi ikonlari bu yuzden seffaf zeminde ciplak glif olarak uretilir (`?bare=1`), uygulama ikonu ise tile'ini korur — yukleyicide ve Baslat menusunde ciplak bir cizgi yarim kalmis gorunurdu.
+  - **16px'te okunabilirlik onceliklidir.** Ince cizgiler ve her turlu yazi o boyutta dagilir; tasarim bu yuzden tek ve cok kalin bir polyline'dan ibarettir.
