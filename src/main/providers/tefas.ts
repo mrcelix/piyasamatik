@@ -1,4 +1,5 @@
 import type { HistoryPoint, Quote, SearchResult } from './types';
+import { describeFetchError } from './errors';
 
 // TEFAS (Turkiye Elektronik Fon Alim Satim Platformu) has no public/documented
 // API; these are the Next.js site's own internal JSON endpoints (verified
@@ -165,7 +166,7 @@ async function fetchOneQuote(code: string): Promise<Quote> {
     const changePercent = prev && prev.fiyat !== 0 ? ((latest.fiyat - prev.fiyat) / prev.fiyat) * 100 : null;
     return { price: latest.fiyat, changePercent, currency: 'TRY', updatedAt: Date.now() };
   } catch (err: any) {
-    return { price: 0, changePercent: null, currency: 'TRY', updatedAt: Date.now(), error: err?.message ?? 'fetch failed' };
+    return { price: 0, changePercent: null, currency: 'TRY', updatedAt: Date.now(), error: describeFetchError(err) };
   }
 }
 

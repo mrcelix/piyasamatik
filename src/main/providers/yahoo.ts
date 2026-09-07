@@ -1,4 +1,5 @@
 import type { Quote, SearchResult, ItemCategory, HistoryPoint } from './types';
+import { describeFetchError } from './errors';
 
 const CHART_URL = (symbol: string) =>
   `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=1d`;
@@ -34,7 +35,7 @@ async function fetchOne(symbol: string): Promise<Quote> {
       changePercent: null,
       currency: 'USD',
       updatedAt: Date.now(),
-      error: err?.message ?? 'fetch failed',
+      error: describeFetchError(err),
     };
   }
 }

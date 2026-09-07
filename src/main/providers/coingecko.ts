@@ -1,4 +1,5 @@
 import type { Quote, SearchResult, HistoryPoint } from './types';
+import { describeFetchError } from './errors';
 
 const PRICE_URL = (ids: string[]) =>
   `https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(
@@ -32,7 +33,7 @@ export async function fetchCoingeckoQuotes(ids: string[]): Promise<Map<string, Q
     }
   } catch (err: any) {
     for (const id of ids) {
-      result.set(id, { price: 0, changePercent: null, currency: 'USD', updatedAt: Date.now(), error: err?.message ?? 'fetch failed' });
+      result.set(id, { price: 0, changePercent: null, currency: 'USD', updatedAt: Date.now(), error: describeFetchError(err) });
     }
   }
   return result;

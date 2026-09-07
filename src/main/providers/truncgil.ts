@@ -1,4 +1,5 @@
 import type { Quote, SearchResult } from './types';
+import { describeFetchError } from './errors';
 
 const API_URL = 'https://finans.truncgil.com/today.json';
 
@@ -72,7 +73,7 @@ export async function fetchTruncgilQuotes(codes: string[]): Promise<Map<string, 
         changePercent: null,
         currency: code === OUNCE_CODE ? 'USD' : 'TRY',
         updatedAt: Date.now(),
-        error: err?.message ?? 'fetch failed',
+        error: describeFetchError(err),
       });
     }
     return result;

@@ -349,7 +349,12 @@ function buildRow(item: WatchlistItem): HTMLDivElement {
   if (quote?.error) {
     const err = document.createElement('div');
     err.className = 'error-text';
-    err.textContent = 'veri alinamadi';
+    // Providers classify the failure (see providers/errors.ts); show what they
+    // found rather than a flat "veri alinamadi" for every cause. "ag engelliyor"
+    // in particular tells the user the domain is filtered on their network,
+    // which no amount of retrying or reinstalling will fix.
+    err.textContent = quote.error || 'veri alinamadi';
+    err.title = quote.error || '';
     right.appendChild(err);
   } else {
     const priceRow = document.createElement('div');

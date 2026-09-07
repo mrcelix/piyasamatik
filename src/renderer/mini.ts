@@ -66,6 +66,9 @@ window.miniTakip.onQuotesUpdated((quotes) => {
   const q = quotes[itemId];
   if (!q || q.error) {
     priceEl.textContent = '--';
+    // No room for the reason in a mini widget, but hovering should still say
+    // why it is dashed out rather than leaving a dead end.
+    priceEl.title = q?.error ?? '';
     changeEl.textContent = '';
     changeEl.className = 'change-flat';
     dirArrowEl.textContent = '';

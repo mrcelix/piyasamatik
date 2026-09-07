@@ -118,6 +118,22 @@ Bu iki adim tamamlanmadan "Google ile Giris Yap" butonu "provider is not enabled
 
 Bu servisler resmi/dokumante edilmemis veya rate-limit'e tabi olabilir; uzun vadeli kullanimda bir servis calismazsa ilgili saglayici modulu (`src/main/providers/`) guncellenmesi gerekebilir.
 
+### Bir oge veri cekemezse
+
+Fiyat yerine kisa bir sebep yazilir (`src/main/providers/errors.ts` hatayi siniflandirir):
+
+| Mesaj | Anlami |
+| --- | --- |
+| `ag engelliyor` | Baglantiyi dogrulanamayan bir sertifika karsiladi. Neredeyse her zaman kurumsal ag/guvenlik duvari o alan adini filtreliyor demektir — uygulamada duzeltilebilecek bir sey yoktur. |
+| `adres bulunamadi` | Alan adi DNS'te cozulemedi. |
+| `baglanti yok` | Adres cozuldu ama baglanti kurulamadi (internet kopuk olabilir). |
+| `zaman asimi` | Sunucu zamaninda yanit vermedi. |
+| `istek siniri` | HTTP 429 — ucretsiz uc noktalarin rate limit'ine takildi, bir sure sonra kendiliginden duzelir. |
+| `servis hatasi NNN` | Sunucu NNN durum koduyla hata dondurdu (5xx ise sorun karsi tarafta). |
+| `veri alinamadi` | Yukaridakilerin hicbirine uymayan durum. |
+
+`ag engelliyor` en cok kripto kategorisinde gorulur: kurumsal aglar kripto ile ilgili alan adlarini (CoinGecko dahil) kategori bazinda sik sik kapatir. Bunu dogrulamak icin baska bir aga (orn. telefon hotspot'u) baglanip uygulamayi yeniden baslatmak yeterlidir.
+
 ## Ogeekleme
 
 Sag ust `+` butonuna basip arama kutusuna sembol veya isim yazarak (ornek: `USD`, `gram altin`, `AAPL`, `bitcoin`, `S&P`, `TCD` veya bir fon adi) doviz, altin/emtia, ABD hisse/endeks, kripto ve TEFAS fonu (yatirim + BES emeklilik) kategorilerinin tamami ayni arama sonucu listesinde gelir; sonuca tiklamak izleme listesine ekler. Her satirin uzerine gelince cikan kirmizi `x` ile listeden kaldirilir.
