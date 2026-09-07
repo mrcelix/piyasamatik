@@ -380,6 +380,26 @@ function buildRow(item: WatchlistItem): HTMLDivElement {
     right.appendChild(priceRow);
     right.appendChild(change);
 
+    // Extended-hours line, only present while a pre-market or after-hours
+    // session is actually running (see deriveExtendedQuote). Deliberately
+    // quieter than the regular price: it is secondary information, and these
+    // sessions are thin enough that the number can be misleading if it shouts.
+    if (quote?.extended) {
+      const ext = document.createElement('div');
+      ext.className = 'row-extended';
+      const label = quote.extended.kind === 'pre' ? 'oncesi' : 'sonrasi';
+      const pct = document.createElement('span');
+      pct.className = changeClass(quote.extended.changePercent);
+      pct.textContent = formatChange(quote.extended.changePercent);
+      ext.textContent = `${label} ${formatPrice(quote.extended.price, quote.currency)} `;
+      ext.appendChild(pct);
+      ext.title =
+        quote.extended.kind === 'pre'
+          ? 'Piyasa oncesi islem (onceki kapanisa gore)'
+          : 'Kapanis sonrasi islem (bugunku kapanisa gore)';
+      right.appendChild(ext);
+    }
+
     // If transactions exist for this item, they're the source of truth for
     // quantity/cost basis (average-cost method); otherwise fall back to the
     // manually-typed fields, unchanged from before transactions existed.

@@ -185,6 +185,16 @@ Varsayilan olarak acik. Ana pencere, icerigindeki (goster ilen ogeler + secili g
 
 Ana pencere basligindaki saydamlik simgesiyle (veya Ayarlar > Pencereler'den) acilip kapatilabilir; acikken tum Piyasamatik pencereleri (ana, mini, kayan serit, grafik) belirlenen orana gore saydamlasir. Saydamlik orani Ayarlar > Pencereler'deki kaydirici ile %40 ile %100 arasinda ayarlanabilir (varsayilan %88).
 
+## Piyasa oncesi / kapanis sonrasi
+
+ABD hisselerinde, uzatilmis seans (pre-market / after-hours) suruyorsa fiyatin altinda ikinci bir satir belirir: `oncesi 321,40 +0,45%` veya `sonrasi 320,10 -0,12%`. Piyasa oncesi degisim onceki kapanisa, kapanis sonrasi degisim ise bugunku kapanisa gore hesaplanir (quote sitelerindeki genel konvansiyon).
+
+Veri, zaten cekilmekte olan Yahoo chart yanitindaki `fulldayPrice` alanindan gelir — **ek bir istek yapilmaz**. (`v7/finance/quote` ve `quoteSummary` uc noktalari pre/post fiyatini dogrudan verirdi ama Yahoo bunlari crumb/cookie arkasina aldi, anahtarsiz 401 donuyorlar.)
+
+Satir yalnizca **o an gercekten bir uzatilmis seans varken** cikar. Bunun neden onemli oldugu ilk bakista gorunmuyor: chart uc noktasi her zaman en son *seansi* dondurur, yani ABD tatilinde veya hafta sonunda Cuma gununun verisini (pencereleriyle birlikte) verir. "Su an New York'ta saat 04:00-09:30 arasinda mi" seklinde duvar saatine bakan bir kontrol, Cuma'nin kapanis sonrasi fiyatini bu sabahin piyasa oncesi fiyati gibi gosterirdi. Bunun yerine `currentTradingPeriod` icindeki **tarihli** pencereler kullanilir: `simdi` o pencerelerin icine dusmuyorsa hicbir sey gosterilmez. Tatilde pencereler gecmiste kaldigi icin satir kendiliginden kaybolur.
+
+Endekslerde (orn. S&P 500) ve BIST hisselerinde bu satir hic cikmaz — Yahoo bu enstrumanlar icin ya sifir uzunlukta uzatilmis seans penceresi dondurur ya da uzatilmis fiyat regular fiyatla ayni olur.
+
 ## Yon oku
 
 Her satirda (ve mini pencerede) fiyatin solunda kucuk bir ok belirir: bir onceki veriye gore fiyat yukselmisse yesil `▲`, dusmusse kirmizi `▼`. Bu, gunluk degisim yuzdesinden (`row-change`) bagimsiz olarak sadece en son iki guncelleme arasindaki ani yonu gosterir.

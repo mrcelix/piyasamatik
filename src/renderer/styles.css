@@ -497,6 +497,26 @@ body.declutter-mode #list {
   font-size: 11px;
 }
 
+/* Extended-hours (pre-market / after-hours) line under the regular change.
+   Muted and a size smaller: it is secondary to the regular price, and these
+   sessions are thin enough that the number should not compete with it. */
+.row-extended {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  /* Grid cards are only 120px wide; ellipsise rather than push the card open. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.row-extended .change-up,
+.row-extended .change-down,
+.row-extended .change-flat {
+  font-size: inherit;
+}
+
 .empty-state {
   padding: 24px 12px;
   text-align: center;

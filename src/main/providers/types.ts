@@ -29,12 +29,24 @@ export interface WatchlistItem {
   listId?: string;
 }
 
+// Extended-hours (pre-market / after-hours) quote, when one is currently
+// running for this instrument. Only Yahoo-backed US equities produce this;
+// indices, BIST and every other provider leave it undefined.
+export interface ExtendedQuote {
+  kind: 'pre' | 'post';
+  price: number;
+  // Pre-market is quoted against the previous regular close, after-hours
+  // against today's regular close — the usual convention on quote sites.
+  changePercent: number | null;
+}
+
 export interface Quote {
   price: number;
   changePercent: number | null;
   currency: string;
   updatedAt: number;
   error?: string;
+  extended?: ExtendedQuote;
 }
 
 export interface HistoryPoint {

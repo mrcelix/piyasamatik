@@ -1,4 +1,4 @@
-import type { Quote, SearchResult, ItemCategory, HistoryPoint } from './types';
+import type { Quote, SearchResult, ItemCategory, HistoryPoint, ExtendedQuote } from './types';
 import { describeFetchError } from './errors';
 
 const CHART_URL = (symbol: string) =>
@@ -11,6 +11,74 @@ const SEARCH_URL = (q: string) =>
   `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`;
 
 const HEADERS = { 'User-Agent': 'Mozilla/5.0 (MiniTakip Desktop Widget)' };
+
+interface TradingWindow {
+  start: number; // epoch seconds
+  end: number;
+}
+
+export interface YahooMetaLike {
+  regularMarketPrice?: number;
+  chartPreviousClose?: number;
+  previousClose?: number;
+  // Yahoo's name for "latest price including extended hours". When a pre- or
+  // after-hours session is running this is the extended price; outside one it
+  // equals regularMarketPrice.
+  fulldayPrice?: number;
+  hasPrePostMarketData?: boolean;
+  currentTradingPeriod?: {
+    pre?: TradingWindow;
+    regular?: TradingWindow;
+    post?: TradingWindow;
+  };
+}
+
+function inWindow(epochSec: number, w?: TradingWindow): boolean {
+  return !!w && w.end > w.start && epochSec >= w.start && epochSec < w.end;
+}
+
+// Decides whether an extended-hours price is worth showing right now.
+//
+// The subtle part is staleness. The chart endpoint always answers with the most
+// recent *session*, so on a US holiday or a weekend it happily returns Friday's
+// data — including Friday's pre/post windows and Friday's after-hours price.
+// Checking the wall clock against "is it between 4am and 9:30am New York time"
+// would then show Friday's after-hours number as this morning's pre-market
+// price. (Measured on US Labor Day: the payload's last bar was 60 hours old
+// while the local time sat squarely inside pre-market hours.)
+//
+// The windows in currentTradingPeriod are dated — they belong to whichever
+// session the payload describes — so requiring `now` to fall inside one of THEM
+// is both the freshness check and the session check in a single test. On a
+// holiday those windows lie in the past, nothing matches, and nothing is shown.
+export function deriveExtendedQuote(meta: YahooMetaLike, nowMs: number): ExtendedQuote | undefined {
+  if (!meta.hasPrePostMarketData) return undefined;
+
+  const extendedPrice = meta.fulldayPrice;
+  const regular = meta.regularMarketPrice;
+  if (typeof extendedPrice !== 'number' || typeof regular !== 'number') return undefined;
+
+  const now = Math.floor(nowMs / 1000);
+  const periods = meta.currentTradingPeriod;
+  const kind: 'pre' | 'post' | null = inWindow(now, periods?.pre)
+    ? 'pre'
+    : inWindow(now, periods?.post)
+      ? 'post'
+      : null;
+  if (!kind) return undefined;
+
+  // Nothing has traded outside regular hours yet, so there is no second number
+  // to report — showing the regular price twice would be noise.
+  if (extendedPrice === regular) return undefined;
+
+  // Pre-market moves are quoted against the previous regular close; after-hours
+  // moves against the close that just happened.
+  const basis = kind === 'pre' ? (meta.chartPreviousClose ?? meta.previousClose) : regular;
+  const changePercent =
+    typeof basis === 'number' && basis !== 0 ? ((extendedPrice - basis) / basis) * 100 : null;
+
+  return { kind, price: extendedPrice, changePercent };
+}
 
 async function fetchOne(symbol: string): Promise<Quote> {
   try {
@@ -28,6 +96,7 @@ async function fetchOne(symbol: string): Promise<Quote> {
       changePercent,
       currency: meta.currency ?? '',
       updatedAt: Date.now(),
+      extended: deriveExtendedQuote(meta, Date.now()),
     };
   } catch (err: any) {
     return {
